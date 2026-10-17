@@ -4,6 +4,8 @@
 
 افزونهٔ Chrome و Firefox که روی خود سایت [نقشهٔ نشان](https://neshan.org/maps) کار می‌کند. نشان هر بار فقط یک مسیر نشان می‌دهد؛ با این افزونه **چند مسیر را هم‌زمان روی نقشهٔ نشان** می‌بینید، اسم می‌گذارید، مقایسه می‌کنید و **جایی برای قرار گذاشتن پیدا می‌کنید که سر راه همه باشد**.
 
+**[نصب در یک دقیقه، بدون هیچ برنامهٔ اضافه ←](#نصب-سریع)**
+
 ![چند مسیر روی نقشهٔ نشان](docs/screenshots/02-routes.webp)
 
 > این افزونه رسمی نیست و هیچ وابستگی‌ای به نشان ندارد. از همان سرویس‌هایی استفاده می‌کند که خود سایت neshan.org برای مسیریابی و جستجو به کار می‌برد و کلید API لازم ندارد.
@@ -70,23 +72,54 @@
 - همه‌چیز خودکار در حافظهٔ افزونه ذخیره می‌شود. از منوی ⋯ می‌شود مسیرها را در فایل ذخیره کرد یا از فایل برگرداند.
 - آیکون افزونه در نوار ابزار پنل را باز و بسته می‌کند، و اگر نشان باز نباشد آن را باز می‌کند.
 
-## نصب
+## نصب سریع
 
-اول بسته‌ها را بسازید (Node.js لازم است):
+فایل آماده را دانلود کنید و در مرورگر وارد کنید؛ به هیچ برنامهٔ دیگری نیاز نیست. همهٔ نسخه‌ها در بخش [Releases](https://github.com/vahidbaghi/neshan-routes/releases/latest) هستند.
+
+### Chrome، Edge و مرورگرهای مشابه
+
+۱. فایل [`neshan-routes-chrome.zip`](https://github.com/vahidbaghi/neshan-routes/releases/latest/download/neshan-routes-chrome.zip) را دانلود و از حالت فشرده خارج کنید.
+
+۲. در نوار آدرس مرورگر بنویسید `chrome://extensions` (در Edge: `edge://extensions`).
+
+۳. کلید **Developer mode** را روشن کنید.
+
+۴. دکمهٔ **Load unpacked** را بزنید و پوشه‌ای را که از فایل zip بیرون آمد انتخاب کنید.
+
+### Firefox (نسخهٔ ۱۲۸ به بعد)
+
+۱. فایل [`neshan-routes-firefox.zip`](https://github.com/vahidbaghi/neshan-routes/releases/latest/download/neshan-routes-firefox.zip) را دانلود کنید (لازم نیست باز شود).
+
+۲. در نوار آدرس بنویسید `about:debugging#/runtime/this-firefox`
+
+۳. دکمهٔ **Load Temporary Add-on** را بزنید و همان فایل zip را انتخاب کنید.
+
+> Firefox افزونه‌ای را که Mozilla امضا نکرده فقط موقت نصب می‌کند و با بستن مرورگر حذف می‌شود. قبل از بستن، از منوی ⋯ در پنل «ذخیره در فایل» را بزنید تا مسیرهایتان بماند.
+
+### شروع
+
+[neshan.org/maps](https://neshan.org/maps) را باز کنید؛ پنل افزونه سمت چپ نقشه است.
+
+## ساختن از روی کد
+
+برای وقتی که می‌خواهید کد را تغییر دهید یا خودتان بسته را بسازید. [Node.js](https://nodejs.org) لازم است.
+
+۱. ریپو را بگیرید و در پوشه‌اش این دو دستور را اجرا کنید:
 
 </div>
 
 ```bash
 npm install
-node build.mjs        # dist/chrome and dist/firefox
+node build.mjs
 ```
 
 <div dir="rtl">
 
-- **Chrome یا Edge:** صفحهٔ `chrome://extensions` → روشن کردن Developer mode → Load unpacked → پوشهٔ `dist/chrome`
-- **Firefox (۱۲۸ به بعد):** صفحهٔ `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → فایل `dist/firefox/manifest.json`. افزونهٔ موقت با بستن Firefox حذف می‌شود؛ برای نصب دائمی، فایل zip ساخته‌شده باید در addons.mozilla.org امضا شود.
+۲. خروجی در پوشهٔ `dist` است: پوشهٔ `dist/chrome` برای Chrome و `dist/firefox` برای Firefox، به‌علاوهٔ فایل zip هر کدام.
 
-بعد [neshan.org/maps](https://neshan.org/maps) را باز کنید؛ پنل سمت چپ نقشه است.
+۳. مثل نصب سریع وارد مرورگر کنید. در Chrome با **Load unpacked** پوشهٔ `dist/chrome` را انتخاب کنید و در Firefox با **Load Temporary Add-on** فایل `dist/firefox/manifest.json` را.
+
+۴. بعد از هر تغییر در کد، دوباره `node build.mjs` را اجرا کنید و در صفحهٔ افزونه‌های مرورگر، افزونه را reload کنید. مسیرهای ذخیره‌شده نمی‌پرند.
 
 ## پشت صحنه
 
