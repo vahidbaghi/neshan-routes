@@ -76,17 +76,17 @@
 
 فایل آماده را دانلود کنید و در مرورگر وارد کنید؛ به هیچ برنامهٔ دیگری نیاز نیست. همهٔ نسخه‌ها در بخش [Releases](https://github.com/vahidbaghi/neshan-routes/releases/latest) هستند.
 
-### Chrome، Edge و مرورگرهای مشابه
+### برای Chrome، Edge و مرورگرهای مشابه
 
 ۱. فایل [`neshan-routes-chrome.zip`](https://github.com/vahidbaghi/neshan-routes/releases/latest/download/neshan-routes-chrome.zip) را دانلود و از حالت فشرده خارج کنید.
 
-۲. در نوار آدرس مرورگر بنویسید `chrome://extensions` (در Edge: `edge://extensions`).
+۲. در نوار آدرس مرورگر بنویسید `chrome://extensions`؛ در Edge بنویسید `edge://extensions`.
 
 ۳. کلید **Developer mode** را روشن کنید.
 
 ۴. دکمهٔ **Load unpacked** را بزنید و پوشه‌ای را که از فایل zip بیرون آمد انتخاب کنید.
 
-### Firefox (نسخهٔ ۱۲۸ به بعد)
+### برای Firefox (نسخهٔ ۱۲۸ به بعد)
 
 ۱. فایل [`neshan-routes-firefox.zip`](https://github.com/vahidbaghi/neshan-routes/releases/latest/download/neshan-routes-firefox.zip) را دانلود کنید (لازم نیست باز شود).
 
@@ -94,11 +94,11 @@
 
 ۳. دکمهٔ **Load Temporary Add-on** را بزنید و همان فایل zip را انتخاب کنید.
 
-> Firefox افزونه‌ای را که Mozilla امضا نکرده فقط موقت نصب می‌کند و با بستن مرورگر حذف می‌شود. قبل از بستن، از منوی ⋯ در پنل «ذخیره در فایل» را بزنید تا مسیرهایتان بماند.
+> نکته: Firefox افزونه‌ای را که Mozilla امضا نکرده فقط موقت نصب می‌کند و با بستن مرورگر حذف می‌شود. قبل از بستن، از منوی ⋯ در پنل «ذخیره در فایل» را بزنید تا مسیرهایتان بماند.
 
 ### شروع
 
-[neshan.org/maps](https://neshan.org/maps) را باز کنید؛ پنل افزونه سمت چپ نقشه است.
+سایت [neshan.org/maps](https://neshan.org/maps) را باز کنید؛ پنل افزونه سمت چپ نقشه است.
 
 ## ساختن از روی کد
 
