@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseRoutes, unwrap, encodeRoutingValue, b64ToUtf8, neshanUrl, parseNeshanUrl, parseLatLng,
-  getRoutes, setFetch, clearRouteCache, NeshanError, setRequestTimeout, setMaxConcurrent, setPacing,
+  getRoutes, setFetch, clearRouteCache, NeshanError, setRequestTimeout, setMaxConcurrent, setPacing, parseTransit,
   routeGap, setRouteGap,
 } from '../src/lib/neshan.js';
 import { haversine, offset, sharedLength } from '../src/lib/geo.js';
@@ -42,6 +42,33 @@ test('parse a real car response', () => {
   assert.equal(r.duration, 236);
   assert.equal(r.distance, 1535);
   assert.ok(r.coords.length > 20);
+});
+
+test('parse a real public-transport response (BRT, bus, metro)', () => {
+  const routes = parseTransit(JSON.parse(fx('route_transit.json')));
+  assert.equal(routes.length, 2);
+  const [r] = routes;
+  assert.equal(r.summary, 'BRT7، بعد BRT1');
+  assert.equal(r.transit.fare, 7280);
+  assert.deepEqual(r.transit.segments.map((g) => g.type), ['walk', 'BRT', 'walk', 'BRT', 'walk']);
+  assert.equal(r.transit.segments[1].stops, 12);
+  // Neshan gives no times here; the estimate must be plausible for ~8 km across Tehran
+  assert.ok(r.duration > 20 * 60 && r.duration < 70 * 60, `${r.duration / 60} min`);
+  const ll = (c) => ({ lat: c[0], lng: c[1] });
+  assert.ok(haversine(ll(r.coords[0]), { lat: 35.7572, lng: 51.4099 }) < 60);
+  assert.ok(haversine(ll(r.coords.at(-1)), { lat: 35.7006, lng: 51.3913 }) < 60);
+  assert.match(routes[1].summary, /مترو 4/);
+  assert.throws(() => parseTransit({ code: 0, data: null }), (e) => e.kind === 'noroute');
+});
+
+test('public transport asks bus-routing with p1..p4', async () => {
+  let url = '';
+  setFetch(async (u) => { url = u; return { ok: true, status: 200, text: async () => fx('route_transit.json') }; });
+  clearRouteCache();
+  const r = await getRoutes({ mode: 'PUBLIC_TRANSPORTATION', origin: { lat: 35.7572, lng: 51.4099 }, dest: { lat: 35.7006, lng: 51.3913 } });
+  assert.match(url, /bus-routing\/\?p1=35\.7572&p2=51\.4099&p3=35\.7006&p4=51\.3913/);
+  assert.equal(r[0].transit.fare, 7280);
+  setFetch((...a) => fetch(...a));
 });
 
 test('parseRoutes reports no-route and junk', () => {

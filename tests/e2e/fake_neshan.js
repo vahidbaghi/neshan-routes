@@ -46,6 +46,25 @@ function route(o, d, mode, variant) {
     lg: [{ s: b64(variant ? 'بلوار آزمایشی - خیابان دوم' : 'خیابان آزمایشی'), ds: b64('x'), rd: b64(String(dist)), du: b64(String(du)), st: [step('خیابان یک')] }],
   };
 }
+// public transport: walk -> bus line -> walk, as Neshan's bus-routing encodes it
+const KEY = new TextEncoder().encode('https://rajman.org');
+const xorB64 = (obj) => {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = '';
+  bytes.forEach((b, i) => { bin += String.fromCharCode(b ^ KEY[i % KEY.length]); });
+  return btoa(bin);
+};
+function transitRoute(o, d, line, type) {
+  const a = { lat: o.lat + (d.lat - o.lat) * 0.05, lng: o.lng + (d.lng - o.lng) * 0.05 };
+  const b = { lat: o.lat + (d.lat - o.lat) * 0.95, lng: o.lng + (d.lng - o.lng) * 0.95 };
+  const seg = (t, from, to, extra = {}) => ({
+    section: { type: t, distance: t === 'walk' ? hav(from, to) : 0 }, travel_time: 0, cost: t === 'walk' ? 0 : 3640,
+    path: { list: [{ path: [from, to], metadata: { strokeColor: '#00D46A' } }] },
+    end: { ...to, unique_id: t === 'walk' ? 'ایستگاه آزمایشی' : 'ایستگاه پایانی' }, line_name: null, station_between: null, ...extra,
+  });
+  return [seg('walk', o, a), seg(type, a, b, { line_name: line, station_between: 9 }), seg('walk', b, d), { section: null }];
+}
+
 const wrap = (obj) => `${'x'.repeat(28)}${b64(JSON.stringify(obj))}@0${'y'.repeat(28)}`;
 
 export const stats = { routing: 0, search: 0, address: 0 };
@@ -72,6 +91,12 @@ async function fakeFetch(url) {
     const mode = u.searchParams.get('type');
     const body = { res: { error: 0, data: { s: 'Ok', r: [route(o, d, mode, 0), route(o, d, mode, 1)] } } };
     return new Response(JSON.stringify(body), { status: 200 });
+  }
+  if (u.pathname.endsWith('/bus-routing/')) {
+    stats.routing++;
+    const q = (k) => Number(u.searchParams.get(k));
+    const o = { lat: q('p1'), lng: q('p2') }, d = { lat: q('p3'), lng: q('p4') };
+    return new Response(JSON.stringify({ code: 0, data: xorB64([transitRoute(o, d, 'BRT1', 'BRT'), transitRoute(o, d, '4', 'metro')]), messages: [] }));
   }
   if (u.pathname.includes('suggestion-v2')) {
     stats.search++;

@@ -27,7 +27,7 @@ TRIPS = [
     ('رضا',            'CAR',   (35.7006, 51.3913, 'میدان انقلاب'),  (35.8048, 51.4337, 'میدان تجریش'),          '17:15'),
     ('خانه تا دفتر',    'CAR',   (35.7290, 51.4040, 'یوسف‌آباد'),     (35.7572, 51.4099, 'میدان ونک'),            ''),
     ('خانه تا باشگاه',  'MOTOR', (35.7290, 51.4040, 'یوسف‌آباد'),     (35.7790, 51.4130, 'پارک ملت'),             ''),
-    ('خانه تا دانشگاه', 'BIKE',  (35.7291, 51.4041, 'یوسف‌آباد'),     (35.7036, 51.3966, 'دانشگاه تهران'),        ''),
+    ('خانه تا دانشگاه', 'PUBLIC_TRANSPORTATION', (35.7291, 51.4041, 'یوسف‌آباد'), (35.7036, 51.3966, 'دانشگاه تهران'), ''),
 ]
 
 
@@ -85,7 +85,9 @@ with sync_playwright() as p:
       TRIPS.forEach(([name, mode, o, d, dep], i) => {
         let t = s.trips.find((x) => x.name === name);
         if (!t) { __routes.root.getElementById('addTripBtn').click(); t = s.trips.at(-1); t.name = name; }
-        t.mode = mode; t.depart = dep; t.inMeeting = i < 3;
+        if (t.mode !== mode) { t.mode = mode; t.cache = null; }
+        t.depart = dep; t.inMeeting = i < 3;
+        if (!t.cache) __routes.routeTrip(t);
         if (!t.origin || Math.abs(t.origin.lat - o[0]) > 1e-4) __routes.setPoint(t.id, 'origin', { lat: o[0], lng: o[1] }, o[2]);
         if (!t.dest || Math.abs(t.dest.lat - d[0]) > 1e-4) __routes.setPoint(t.id, 'dest', { lat: d[0], lng: d[1] }, d[2]);
       });
@@ -103,6 +105,17 @@ with sync_playwright() as p:
     pg.evaluate("__routes.fitAll()")
     settle(pg, 2)
     shot(pg, '03-route-editor')
+
+    # public transport: estimated time, fare, lines and stops; walking parts dotted on the map
+    pg.locator('.trip.open .trip-row').click()
+    pg.locator('.trip-row').nth(5).click()
+    wait(pg, f"!!{R}.querySelector('.trip.open ol.transit')", 120, 'public transport route')
+    pg.evaluate("(() => { const t = __routes.state.trips[5]; const c = __routes.runtime(t.id).alts[t.alt].coords; __routes.nm.fitPoints(c, { top: 90, bottom: 60, left: 480, right: 120 }); })()")
+    pg.evaluate(f"{R}.querySelector('.trip.open ol.transit').scrollIntoView({{block: 'center'}})")
+    settle(pg, 2.5)
+    shot(pg, '11-public-transport')
+    pg.locator('.trip.open .trip-row').click()
+    pg.locator('.trip-row').nth(1).click()
 
     # picking a point on the map
     pg.locator('.trip.open .pick-btn[data-which=dest]').click()

@@ -13,12 +13,12 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const icons = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 96: 'icons/icon-96.png', 128: 'icons/icon-128.png' };
 const base = {
   manifest_version: 3,
-  name: 'مقایسه مسیرهای نشان و محل قرار',
+  name: 'مسیرها و محل قرار (برای نقشهٔ نشان)',
   short_name: 'مسیرها و قرار',
   version: pkg.version,
-  description: 'چند مسیر را روی نقشهٔ نشان با هم مقایسه کنید و بهترین جا برای قرار گذاشتن سر راه همه را پیدا کنید.',
+  description: 'چند مسیر هم‌زمان روی نقشهٔ نشان، مقایسهٔ آن‌ها و پیدا کردن محل قراری سر راه همه. افزونهٔ غیررسمی؛ وابسته به نشان نیست.',
   icons,
-  action: { default_title: 'مقایسه مسیرها و محل قرار', default_icon: { 16: icons[16], 32: icons[32], 48: icons[48] } },
+  action: { default_title: 'مسیرها و محل قرار', default_icon: { 16: icons[16], 32: icons[32], 48: icons[48] } },
   permissions: ['storage'],
   content_scripts: [
     // storage bridge (isolated world) first, then the panel inside the page's own world
@@ -33,7 +33,7 @@ const manifests = {
     background: { scripts: ['background.js'] },
     browser_specific_settings: {
       gecko: {
-        id: 'neshan-routes@vahid.local',
+        id: 'neshan-routes@vahidbaghi.ir',
         strict_min_version: '128.0',
         data_collection_permissions: { required: ['none'] },
       },

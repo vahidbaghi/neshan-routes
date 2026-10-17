@@ -2,6 +2,7 @@
 // comparison, and the meeting-point search. Runs in the page (MAIN world).
 import {
   MODES, getRoutes, getBestRoute, search, reverse, neshanUrl, parseNeshanUrl, parseLatLng, routeKey, requestCount,
+  transitLineLabel,
   onPacing, routeGap, setRouteGap,
 } from '../lib/neshan.js';
 import { findMeetingPoint, evaluateMeetingPoint } from '../lib/meet.js';
@@ -42,6 +43,9 @@ function fmtDur(sec) {
   const h = Math.floor(m / 60), r = m % 60;
   return `${fa(h)} ساعت${r ? ` و ${fa(r)} دقیقه` : ''}`;
 }
+// Neshan gives no times for public transport; ours are estimates, said so with «حدود».
+const durText = (r) => (r?.transit ? `حدود ${fmtDur(r.duration)}` : fmtDur(r.duration));
+const fmtToman = (n) => `${fa(Math.round(n).toLocaleString('en-US').replace(/,/g, '٬'))} تومان`;
 const fmtExtra = (sec) => (sec < 45 ? 'بدون وقت اضافه' : `+${fmtDur(Math.max(60, sec))}`);
 function fmtDist(m) {
   if (m < 1000) return `${fa(Math.max(10, Math.round(m / 10) * 10))} متر`;
@@ -195,9 +199,16 @@ export function mountUI(nm) {
       const r = runtime(t.id);
       const f = !!inMeeting;
       if (r.status === 'ok' && r.alts) {
-        r.alts.forEach((a, i) => { if (i !== t.alt) lines.push({ coords: a.coords, color: t.color, width: 4, dash: 'alt', opacity: f ? 0.25 : 0.6 }); });
+        // Neshan's other public-transport options overlap a lot: they stay as buttons only
+        if (t.mode !== 'PUBLIC_TRANSPORTATION') {
+          r.alts.forEach((a, i) => { if (i !== t.alt) lines.push({ coords: a.coords, color: t.color, width: 4, dash: 'alt', opacity: f ? 0.25 : 0.6 }); });
+        }
         const sel = r.alts[t.alt] || r.alts[0];
-        lines.push({ coords: sel.coords, color: t.color, width: 5, opacity: f ? 0.3 : 1 });
+        if (sel.transit) {
+          for (const g of sel.transit.segments) {
+            lines.push({ coords: g.coords, color: t.color, width: g.type === 'walk' ? 4 : 6, dash: g.type === 'walk' ? 'dot' : undefined, opacity: f ? 0.3 : 1 });
+          }
+        } else lines.push({ coords: sel.coords, color: t.color, width: 5, opacity: f ? 0.3 : 1 });
       }
       for (const which of ['origin', 'dest']) {
         const p = t[which];
@@ -328,7 +339,7 @@ export function mountUI(nm) {
       const alts = await getRoutes({ mode: t.mode, origin: t.origin, dest: t.dest, avoid: t.avoid });
       if (seq !== r.seq) return;
       r.alts = alts; r.status = 'ok'; r.error = '';
-      t.cache = { key, at: Date.now(), alts: alts.map(({ duration, distance, summary, coords }) => ({ duration, distance, summary, coords })) };
+      t.cache = { key, at: Date.now(), alts: alts.map(({ duration, distance, summary, coords, transit }) => ({ duration, distance, summary, coords, transit })) };
       save();
       if (!(t.alt < alts.length)) t.alt = 0;
     } catch (e) {
@@ -470,6 +481,12 @@ export function mountUI(nm) {
     $('.row-name', el).textContent = t.name;
     const nameInput = $('input[data-f="name"]', el);
     if (nameInput && R.activeElement !== nameInput && nameInput.value !== t.name) nameInput.value = t.name;
+    for (const b of $$('.mode', el)) {
+      const on = b.dataset.mode === t.mode;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+    $('.avoid-opts', el).hidden = !(t.mode === 'CAR' || t.mode === 'MOTOR');
     $('.row-mode', el).textContent = MODES[t.mode].icon;
     $('.row-mode', el).title = MODES[t.mode].label;
     const r = runtime(t.id);
@@ -478,7 +495,7 @@ export function mountUI(nm) {
     if (r.status === 'ok') {
       const sel = r.alts[t.alt] || r.alts[0];
       const dep = parseClock(t.depart);
-      sub.textContent = `${fmtDur(sel.duration)}، ${fmtDist(sel.distance)}${dep !== null ? `، رسیدن ${fmtClock(dep + sel.duration / 60)}` : ''}`;
+      sub.textContent = `${durText(sel)}، ${fmtDist(sel.distance)}${dep !== null ? `، رسیدن ${fmtClock(dep + sel.duration / 60)}` : ''}`;
     } else if (r.status === 'loading') sub.textContent = 'در حال مسیریابی…';
     else if (r.status === 'error') sub.textContent = 'مسیر گرفته نشد';
     else sub.textContent = t.origin ? 'مقصد را مشخص کنید' : 'مبدا و مقصد را مشخص کنید';
@@ -543,17 +560,28 @@ export function mountUI(nm) {
     if (r.status !== 'ok') { box.innerHTML = ''; return; }
     const sel = r.alts[t.alt] || r.alts[0];
     const alts = r.alts.length > 1
-      ? `<div class="alts"><span class="muted">راه‌های نشان:</span>${r.alts.map((a, i) => `<button class="alt ${i === t.alt ? 'sel' : ''}" data-alt="${i}" title="راه ${fa(i + 1)}">${fmtDur(a.duration)}</button>`).join('')}</div>`
+      ? `<div class="alts"><span class="muted">راه‌های نشان:</span>${r.alts.map((a, i) => `<button class="alt ${i === t.alt ? 'sel' : ''}" data-alt="${i}" title="راه ${fa(i + 1)}${a.transit ? `: ${esc(a.summary)}` : ''}">${durText(a)}</button>`).join('')}</div>`
       : '';
     const dep = parseClock(t.depart);
+    const tr = sel.transit;
     box.innerHTML = `
       <div class="main">
-        <span class="big">${fmtDur(sel.duration)}</span>
+        <span class="big">${durText(sel)}</span>
         <span>${fmtDist(sel.distance)}</span>
         ${dep !== null ? `<span class="muted">رسیدن ${fmtClock(dep + sel.duration / 60)}</span>` : ''}
       </div>
-      ${sel.summary ? `<div class="muted via">از ${esc(sel.summary)}</div>` : ''}
+      ${tr ? transitHTML(tr) : sel.summary ? `<div class="muted via">از ${esc(sel.summary)}</div>` : ''}
       ${alts}`;
+  }
+
+  // Public transport, step by step: walk, ride a line for N stops, get off at ...
+  function transitHTML(tr) {
+    const steps = tr.segments.map((g) => g.type === 'walk'
+      ? `<li class="walk"><span class="ic">🚶</span><span>${fmtDist(g.distance)} پیاده${g.to ? ` تا ${esc(g.to)}` : ''}</span></li>`
+      : `<li class="ride"><span class="ic">${g.type === 'metro' ? '🚇' : '🚌'}</span><span><b>${esc(transitLineLabel(g))}</b>${g.stops ? `، ${fa(g.stops)} ایستگاه` : ''}${g.to ? ` تا ${esc(g.to)}` : ''}</span></li>`).join('');
+    return `<div class="muted via">${tr.fare ? `کرایه ${fmtToman(tr.fare)}، ` : ''}${fmtDist(tr.walk)} پیاده‌روی</div>
+      <ol class="transit">${steps}</ol>
+      <p class="hint">زمان مسیرهای همگانی تخمینی است؛ خود نشان برای این حالت زمان نمی‌دهد.</p>`;
   }
 
   function highlightCard(id) {
@@ -768,7 +796,7 @@ export function mountUI(nm) {
             <span class="dot"></span>
             <span class="nm" title="${esc(t.name)}">${esc(t.name)}</span>
             <div class="bar-track"><div class="bar-fill" style="width:${maxDur ? (100 * r.duration) / maxDur : 0}%"></div></div>
-            <span class="val"><b>${fmtDur(r.duration)}</b><small>${fmtDist(r.distance)}</small></span>
+            <span class="val"><b>${durText(r)}</b><small>${fmtDist(r.distance)}</small></span>
             ${i === 0 && sorted.length > 1 ? '<span class="best-tag">نزدیک‌ترین</span>' : ''}
           </div>`).join('')}
       </div>`;
@@ -806,7 +834,7 @@ export function mountUI(nm) {
           const kmh = r.duration ? (r.distance / r.duration) * 3.6 : 0;
           return `<tr>
             <td><span class="dot" style="--c:${t.color}"></span>${esc(t.name)} <span title="${MODES[t.mode].label}">${MODES[t.mode].icon}</span>${i === 0 && rows.length > 1 ? '<span class="best-tag">سریع‌ترین</span>' : ''}</td>
-            <td class="num-cell">${fmtDur(r.duration)}</td>
+            <td class="num-cell">${durText(r)}</td>
             <td class="num-cell">${fmtDist(r.distance)}</td>
             <td class="num-cell">${fa(Math.round(kmh))} <small class="muted">km/h</small></td>
             ${anyDep ? `<td>${dep !== null ? fmtClock(dep + r.duration / 60) : '—'}</td>` : ''}
@@ -817,7 +845,7 @@ export function mountUI(nm) {
         <div class="bar-row" style="--c:${t.color}">
           <span class="nm">${esc(t.name)}</span>
           <div class="bar-track"><div class="bar-fill" style="width:${max ? (100 * r[key]) / max : 0}%"></div></div>
-          <span class="val">${fmt(r[key])}</span>
+          <span class="val">${key === 'duration' ? durText(r) : fmt(r[key])}</span>
         </div>`).join('')}</div>`;
     let matrix = '';
     if (rows.length > 5) {

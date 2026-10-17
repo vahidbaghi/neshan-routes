@@ -65,6 +65,11 @@ with sync_playwright() as p:
     pg.click('.mode[data-mode=PEDESTRIAN]')
     pg.wait_for_function(f"{T % 0}.querySelector('.big') && {T % 0}.querySelector('.big').textContent !== {before!r}")
     check('mode buttons switch and re-route', js("__routes.state.trips[0].mode") == 'PEDESTRIAN')
+    pg.click('.mode[data-mode=PUBLIC_TRANSPORTATION]')
+    pg.wait_for_function(f"!!{T % 0}.querySelector('ol.transit')")
+    res = js(f"{T % 0}.querySelector('.trip-result').innerText")
+    check('public transport: estimated time, fare and steps', 'حدود' in res and 'کرایه' in res and 'BRT1' in res and 'ایستگاه' in res, res.replace('\n', ' ')[:160])
+    check('public transport drawn as walking (dotted) and riding parts', any(l.get('dash') == 'dot' for l in js("__routes.nm.lines")))
     pg.click('.mode[data-mode=CAR]')
     pg.wait_for_function(f"{T % 0}.querySelector('.big') && {T % 0}.querySelector('.big').textContent === {before!r}")
 
@@ -134,6 +139,16 @@ with sync_playwright() as p:
         check('other suggested spots selectable', js("__routes.state.meeting.show") == 1)
         pg.locator('.options button').nth(0).click()
     shot('6-meet-result')
+
+    # one person by public transport: the meeting search works with estimated times too
+    pg.click('.tab[data-tab=trips]')
+    js("(() => { const t = __routes.state.trips[1]; t.mode = 'PUBLIC_TRANSPORTATION'; __routes.routeTrip(t); return true; })()")
+    pg.wait_for_function("__routes.runtime(__routes.state.trips[1].id).status === 'ok' && !!__routes.runtime(__routes.state.trips[1].id).alts[0].transit")
+    pg.click('.tab[data-tab=meet]')
+    pg.wait_for_function("!__routes.root.getElementById('meetBtn').disabled")
+    pg.click('#meetBtn')
+    pg.wait_for_function("__routes.state.meeting && !__routes.state.meeting.stale && __routes.root.querySelectorAll('#meetResult .person').length === 3", timeout=60000)
+    check('meeting with one person on public transport', len(js("__routes.state.meeting.options[0].per[1].legA.coords")) > 1)
 
     js("__setDark(true)")
     check('panel follows the night map', js("__routes.root.host.classList.contains('dark')"))

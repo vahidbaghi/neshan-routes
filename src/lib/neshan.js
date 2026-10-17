@@ -5,11 +5,17 @@
 //   search:   GET pwa-api/neshan-search/suggestion-v2?data=<base64(encodeURIComponent(JSON))>
 //   address:  GET pwa-api/location-to-address?lat=&lng=
 //   search/address responses are base64 wrapped in 28-char padding (see unwrap()).
+//   public transport: GET pwa-api/bus-routing/?p1=lat&p2=lng&p3=lat&p4=lng; `data` is
+//             base64 XOR-ed with "https://rajman.org" -> routes, each a list of walk/bus/BRT/
+//             metro/van segments. Neshan gives no times for these (all 0), so we estimate them.
+
+import { haversine } from './geo.js';
 
 const BASE = 'https://neshan.org/maps/pwa-api/';
 
 export const MODES = {
   CAR: { label: 'خودرو', icon: '🚗', url: 'car' },
+  PUBLIC_TRANSPORTATION: { label: 'همگانی', icon: '🚇', url: 'public_transportation' },
   MOTOR: { label: 'موتور', icon: '🛵', url: 'motor' },
   PEDESTRIAN: { label: 'پیاده', icon: '🚶', url: 'pedestrian' },
   BIKE: { label: 'دوچرخه', icon: '🚲', url: 'bike' },
@@ -120,6 +126,89 @@ export function parseRoutes(body) {
       steps,
     };
   });
+}
+
+// ---------- public transport ----------
+
+// Neshan returns no durations for public transport, so they are estimated:
+// average speed including stops, plus an average wait each time you board.
+const TRANSIT = {
+  walk: { speed: 1.25, wait: 0, label: 'پیاده' },        // 4.5 km/h
+  metro: { speed: 8.3, wait: 240, label: 'مترو' },      // 30 km/h, ~4 min wait
+  BRT: { speed: 4.7, wait: 240, label: 'BRT' },         // 17 km/h
+  bus: { speed: 3.9, wait: 420, label: 'اتوبوس' },      // 14 km/h, ~7 min wait
+  van: { speed: 5.0, wait: 300, label: 'ون' },          // 18 km/h
+};
+const TRANSIT_KEY = new TextEncoder().encode('https://rajman.org');
+
+export function xorDecode(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) ^ TRANSIT_KEY[i % TRANSIT_KEY.length];
+  return JSON.parse(new TextDecoder('utf-8').decode(out));
+}
+
+const lineLength = (coords) => {
+  let d = 0;
+  for (let i = 1; i < coords.length; i++) {
+    d += haversine({ lat: coords[i - 1][0], lng: coords[i - 1][1] }, { lat: coords[i][0], lng: coords[i][1] });
+  }
+  return d;
+};
+
+export function transitLineLabel(seg) {
+  if (seg.type === 'metro') return `مترو ${seg.line}`.trim();
+  if (seg.type === 'bus') return `اتوبوس ${seg.line}`.trim();
+  if (seg.type === 'van') return `ون ${seg.line}`.trim();
+  return seg.line || TRANSIT[seg.type]?.label || seg.type;
+}
+
+export function parseTransit(body) {
+  if (!body || typeof body.data !== 'string' || !body.data) {
+    if (body && (body.data === null || body.data === '')) throw new NeshanError('مسیر همگانی پیدا نشد', 'noroute');
+    throw new NeshanError('پاسخ نامعتبر از نشان', 'api');
+  }
+  let routes;
+  try { routes = xorDecode(body.data); } catch { throw new NeshanError('پاسخ نامعتبر از نشان', 'api'); }
+  if (!Array.isArray(routes) || !routes.length) throw new NeshanError('مسیر همگانی پیدا نشد', 'noroute');
+  const out = routes.map((r) => {
+    const segs = (Array.isArray(r) ? r : []).filter((x) => x && x.section && x.section.type).map((x) => {
+      const type = TRANSIT[x.section.type] ? x.section.type : 'bus';
+      const coords = (x.path?.list?.[0]?.path || []).filter((q) => typeof q?.lat === 'number').map((q) => [q.lat, q.lng]);
+      const distance = lineLength(coords) || Number(x.section.distance) || 0;
+      const t = TRANSIT[type];
+      return {
+        type, coords, distance,
+        duration: distance / t.speed + t.wait,
+        line: x.line_name || '',
+        stops: Number(x.station_between) || 0,
+        to: (x.end && typeof x.end === 'object' ? x.end.unique_id : '') || '',
+        cost: Number(x.cost) || 0,
+      };
+    });
+    if (!segs.length) return null;
+    const coords = [];
+    for (const g of segs) for (const c of g.coords) {
+      const last = coords[coords.length - 1];
+      if (!last || last[0] !== c[0] || last[1] !== c[1]) coords.push(c);
+    }
+    const rides = segs.filter((g) => g.type !== 'walk');
+    return {
+      duration: segs.reduce((a, g) => a + g.duration, 0),
+      distance: segs.reduce((a, g) => a + g.distance, 0),
+      distanceText: '',
+      summary: rides.map(transitLineLabel).join('، بعد ') || 'پیاده',
+      coords,
+      steps: [],
+      transit: {
+        segments: segs,
+        fare: segs.reduce((a, g) => a + g.cost, 0),
+        walk: segs.filter((g) => g.type === 'walk').reduce((a, g) => a + g.distance, 0),
+      },
+    };
+  }).filter(Boolean);
+  if (!out.length) throw new NeshanError('مسیر همگانی پیدا نشد', 'noroute');
+  return out;
 }
 
 // ---------- request plumbing ----------
@@ -265,12 +354,16 @@ export function getRoutes({ mode, origin, dest, avoid = {}, signal }) {
     avoidOddEvenZone: String(!!avoid.oddEven),
     avoidToll: String(!!avoid.toll),
   });
+  const transit = mode === 'PUBLIC_TRANSPORTATION';
+  const url = transit
+    ? `${BASE}bus-routing/?${new URLSearchParams({ p1: origin.lat, p2: origin.lng, p3: dest.lat, p4: dest.lng })}`
+    : `${BASE}vehicle-routing/?${params}`;
   const p = (async () => {
     requestCount++;
-    const text = await getText(`${BASE}vehicle-routing/?${params}`, signal, 'route');
+    const text = await getText(url, signal, 'route');
     let body;
     try { body = JSON.parse(text); } catch { throw new NeshanError('پاسخ نامعتبر از نشان', 'api'); }
-    return parseRoutes(body);
+    return transit ? parseTransit(body) : parseRoutes(body);
   })();
   routeCache.set(key, p);
   // Do not cache failures (or aborted requests) so a retry can succeed.
