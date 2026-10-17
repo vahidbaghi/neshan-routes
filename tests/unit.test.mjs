@@ -8,7 +8,7 @@ import {
 } from '../src/lib/neshan.js';
 import { haversine, offset, sharedLength } from '../src/lib/geo.js';
 import {
-  parseGoogleDirections, parseGoogleSearch, parseGoogleUrl, googleUrl, directionsPb, getGoogleRoutes, clearGoogleCache, googleSearch,
+  parseGoogleDirections, parseGoogleSearch, parseGoogleUrl, googleUrl, directionsPb, getGoogleRoutes, clearGoogleCache, googleSearch, inIran,
 } from '../src/lib/google.js';
 import { findMeetingPoint, evaluateMeetingPoint, scoreLegs } from '../src/lib/meet.js';
 
@@ -416,7 +416,7 @@ test('Google: parse public transport (real times, lines, stops, fare)', () => {
 
 test('Google: empty answer and blocked page', () => {
   const empty = `)]}'${String.fromCharCode(10)}${JSON.stringify([[null, []]])}`;
-  assert.throws(() => parseGoogleDirections(empty, 'BIKE'), (e) => e.kind === 'noroute' && /حالت/.test(e.message));
+  assert.throws(() => parseGoogleDirections(empty, 'BIKE'), (e) => e.kind === 'noroute' && /دوچرخه/.test(e.message));
   assert.throws(() => parseGoogleDirections('<html>unusual traffic</html>', 'CAR'), (e) => e.kind === 'ratelimit');
 });
 
@@ -470,4 +470,19 @@ test('Google: route and search requests go out without cookies', async () => {
   assert.equal(seen.length, 2);
   for (const [u, c] of seen) assert.equal(c, 'omit', u);
   setFetch((...x) => fetch(...x));
+});
+
+test('Google: no transit route is explained by place (Iran or not)', () => {
+  const empty = `)]}'${String.fromCharCode(10)}${JSON.stringify([[null, []]])}`;
+  const tehran = { origin: { lat: 35.7572, lng: 51.4099 }, dest: { lat: 35.7006, lng: 51.3913 } };
+  const france = { origin: { lat: 49.9648, lng: 2.9311 }, dest: { lat: 48.30, lng: 3.62 } };
+  assert.throws(() => parseGoogleDirections(empty, 'PUBLIC_TRANSPORTATION', tehran), /در ایران/);
+  assert.throws(() => parseGoogleDirections(empty, 'PUBLIC_TRANSPORTATION', france), (e) => !/ایران/.test(e.message) && /همگانی/.test(e.message));
+  assert.throws(() => parseGoogleDirections(empty, 'BIKE', france), (e) => !/ایران/.test(e.message) && /دوچرخه/.test(e.message));
+  for (const [name, p, want] of [['Tehran', [35.7, 51.4], true], ['Mashhad', [36.3, 59.6], true], ['Tabriz', [38.08, 46.29], true],
+    ['Bandar Abbas', [27.18, 56.27], true], ['Zahedan', [29.5, 60.86], true], ['Ahvaz', [31.32, 48.67], true],
+    ['Baghdad', [33.31, 44.36], false], ['Herat', [34.35, 62.2], false], ['Baku', [40.4, 49.87], false], ['Dubai', [25.2, 55.27], false],
+    ['Basra', [30.5, 47.8], false], ['Ashgabat', [37.95, 58.38], false], ['Paris', [48.86, 2.35], false]]) {
+    assert.equal(inIran({ lat: p[0], lng: p[1] }), want, name);
+  }
 });

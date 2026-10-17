@@ -58,15 +58,33 @@ function decodeGeometry(g) {
   return out;
 }
 
-export function parseGoogleDirections(text, mode) {
+// Rough outline of Iran (lng, lat): Google has no transit or bike routes there, so an
+// empty answer inside it gets a different explanation than one elsewhere.
+const IRAN = [[44.03, 39.38], [44.79, 39.71], [46.5, 38.9], [48.0, 38.9], [48.87, 38.43], [49.47, 37.47], [53.0, 36.8],
+  [53.9, 37.35], [55.4, 38.0], [57.3, 38.2], [59.3, 37.5], [60.4, 36.6], [61.2, 36.6], [60.5, 34.3], [60.9, 33.5],
+  [60.6, 33.0], [60.9, 31.5], [61.7, 31.4], [60.9, 29.9], [62.4, 29.4], [63.3, 27.2], [61.6, 25.1], [57.8, 25.7],
+  [56.3, 27.1], [54.0, 26.5], [51.4, 27.9], [50.1, 30.0], [48.5, 29.95], [48.0, 30.5], [47.7, 31.0], [47.4, 32.4],
+  [46.1, 33.0], [45.4, 33.9], [45.9, 35.0], [45.4, 35.9], [44.8, 37.2], [44.2, 37.9], [44.4, 38.4]];
+export function inIran(p) {
+  let inside = false;
+  for (let i = 0, k = IRAN.length - 1; i < IRAN.length; k = i++) {
+    const [x1, y1] = IRAN[i], [x2, y2] = IRAN[k];
+    if ((y1 > p.lat) !== (y2 > p.lat) && p.lng < ((x2 - x1) * (p.lat - y1)) / (y2 - y1) + x1) inside = !inside;
+  }
+  return inside;
+}
+
+function noRouteMessage(mode, ends) {
+  if (mode !== 'PUBLIC_TRANSPORTATION' && mode !== 'BIKE') return 'گوگل مسیری پیدا نکرد';
+  const what = mode === 'BIKE' ? 'دوچرخه' : 'همگانی';
+  if (ends && inIran(ends.origin) && inIran(ends.dest)) return `گوگل در ایران مسیر ${what} نمی‌دهد؛ خودرو یا پیاده را بزنید.`;
+  return `گوگل بین این دو نقطه مسیر ${what} پیدا نکرد (خود گوگل‌مپ هم برایشان مسیری نمی‌دهد).`;
+}
+
+export function parseGoogleDirections(text, mode, ends) {
   const j = parseJsonBody(text);
   const routes = at(j, 0, 1) || [];
-  if (!routes.length) {
-    const msg = mode === 'PUBLIC_TRANSPORTATION' || mode === 'BIKE'
-      ? `گوگل برای این مسیر حالت ${mode === 'BIKE' ? 'دوچرخه' : 'همگانی'} ندارد (در ایران گوگل مسیر همگانی و دوچرخه نمی‌دهد؛ خودرو یا پیاده را بزنید).`
-      : 'گوگل مسیری پیدا نکرد';
-    throw new NeshanError(msg, 'noroute');
-  }
+  if (!routes.length) throw new NeshanError(noRouteMessage(mode, ends), 'noroute');
   const geoms = at(j, 0, 7) || [];
   const labels = (at(j, 0, 0) || []).map((w) => clean(at(w, 0, 1, 1) || at(w, 0, 0, 3) || ''));
   const alts = routes.map((r, i) => {
@@ -119,7 +137,7 @@ export function getGoogleRoutes({ mode, origin, dest, signal }) {
   const key = googleRouteKey(mode, origin, dest);
   if (cache.has(key)) return cache.get(key);
   const url = `/maps/preview/directions?authuser=0&hl=fa&pb=${directionsPb(mode, origin, dest)}`;
-  const p = (async () => parseGoogleDirections(await fetchText(url, signal, 'route', NO_COOKIES), mode))();
+  const p = (async () => parseGoogleDirections(await fetchText(url, signal, 'route', NO_COOKIES), mode, { origin, dest }))();
   cache.set(key, p);
   const drop = () => { if (cache.get(key) === p) cache.delete(key); };
   p.catch(drop);

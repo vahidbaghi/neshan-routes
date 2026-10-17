@@ -33,6 +33,8 @@ const LOGO = `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect x="
 const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const fa = (v) => String(v).replace(/\d/g, (d) => FA_DIGITS[d]).replace(/\./g, '٫');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// a place or line name of either script, kept from reordering the Persian text around it
+const bdi = (s) => `<bdi>${esc(s)}</bdi>`;
 
 function fmtDur(sec) {
   const s = Math.max(0, Math.round(sec));
@@ -583,17 +585,17 @@ export function mountUI(nm, P) {
         <span>${fmtDist(sel.distance)}</span>
         ${dep !== null ? `<span class="muted">رسیدن ${fmtClock(dep + sel.duration / 60)}</span>` : ''}
       </div>
-      ${tr ? transitHTML(tr) : sel.summary ? `<div class="muted via">از ${esc(sel.summary)}</div>` : ''}
+      ${tr ? transitHTML(tr) : sel.summary ? `<div class="muted via">از ${bdi(sel.summary)}</div>` : ''}
       ${alts}`;
   }
 
   // Public transport, step by step: walk, ride a line for N stops, get off at ...
   function transitHTML(tr) {
     const steps = tr.segments.map((g) => g.type === 'walk'
-      ? `<li class="walk"><span class="ic">🚶</span><span>${fmtDist(g.distance)} پیاده${g.to ? ` تا ${esc(g.to)}` : ''}</span></li>`
-      : `<li class="ride"><span class="ic">${g.type === 'metro' ? '🚇' : g.type === 'transit' ? '🚆' : '🚌'}</span><span><b>${esc(g.type === 'transit' ? g.line : transitLineLabel(g))}</b>${g.stops ? `، ${fa(g.stops)} ایستگاه` : ''}${g.from ? ` از ${esc(g.from)}` : ''}${g.to ? ` تا ${esc(g.to)}` : ''}${g.type === 'transit' && g.duration ? `، ${fmtDur(g.duration)}` : ''}</span></li>`).join('');
+      ? `<li class="walk"><span class="ic">🚶</span><span>${fmtDist(g.distance)} پیاده${g.to ? ` تا ${bdi(g.to)}` : ''}</span></li>`
+      : `<li class="ride"><span class="ic">${g.type === 'metro' ? '🚇' : g.type === 'transit' ? '🚆' : '🚌'}</span><span><b>${bdi(g.type === 'transit' ? g.line : transitLineLabel(g))}</b>${g.stops ? `، ${fa(g.stops)} ایستگاه` : ''}${g.from ? ` از ${bdi(g.from)}` : ''}${g.to ? ` تا ${bdi(g.to)}` : ''}${g.type === 'transit' && g.duration ? `، ${fmtDur(g.duration)}` : ''}</span></li>`).join('');
     const fare = tr.fareText || (tr.fare ? fmtToman(tr.fare) : '');
-    return `<div class="muted via">${fare ? `کرایه ${esc(fare)}، ` : ''}${fmtDist(tr.walk)} پیاده‌روی</div>
+    return `<div class="muted via">${fare ? `کرایه ${bdi(fare)}، ` : ''}${fmtDist(tr.walk)} پیاده‌روی</div>
       <ol class="transit">${steps}</ol>
       ${tr.estimated === false ? '' : '<p class="hint">زمان مسیرهای همگانی تخمینی است؛ خود نشان برای این حالت زمان نمی‌دهد.</p>'}`;
   }
@@ -801,7 +803,7 @@ export function mountUI(nm, P) {
       const ids = g.rows.map(({ t }) => t.id).join(',');
       return `<div class="card group">
         <div class="group-head">
-          <b>${by === 'dest' ? 'به' : 'از'} ${esc(g.title)}</b>
+          <b>${by === 'dest' ? 'به' : 'از'} ${bdi(g.title)}</b>
           <span class="muted">${fa(g.rows.length)} مسیر</span>
           <button class="link-btn" data-only="${ids}" title="بقیهٔ مسیرها موقتاً از روی نقشه پنهان می‌شوند">فقط این‌ها روی نقشه</button>
         </div>
@@ -1148,7 +1150,7 @@ export function mountUI(nm, P) {
       ${choices}
       <div class="meet-head"><span class="meet-pin">🤝</span><div>
         <div class="meet-sub">${title}</div>
-        <div class="meet-addr">${opt.address ? esc(opt.address) : `<span dir="ltr">${fmtCoord(opt.p)}</span>`}</div>
+        <div class="meet-addr">${opt.address ? bdi(opt.address) : `<span dir="ltr">${fmtCoord(opt.p)}</span>`}</div>
         ${vsBest}
       </div></div>
       <div class="when">${when}</div>
