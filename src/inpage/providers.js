@@ -11,6 +11,8 @@ export const neshanProvider = {
   storageKey: 'state',
   modes: ['CAR', 'PUBLIC_TRANSPORTATION', 'MOTOR', 'PEDESTRIAN', 'BIKE'],
   avoid: true, // traffic zone / odd-even / toll options
+  linkHint: 'یا لینک یک مسیر نشان را اینجا بچسبانید',
+  badLinkText: 'این لینک مسیر نشان نیست. لینکی شبیه neshan.org/maps/routing/… لازم است.',
   getRoutes: (args) => N.getRoutes(args),
   routeKey: (mode, o, d, avoid) => N.routeKey(mode, o, d, avoid),
   search: (term, center, signal) => N.search(term, center, signal),
@@ -26,6 +28,8 @@ export const googleProvider = {
   storageKey: 'state.google',
   modes: ['CAR', 'PUBLIC_TRANSPORTATION', 'PEDESTRIAN', 'BIKE'],
   avoid: false,
+  linkHint: 'یا لینک یک مسیر گوگل‌مپ را اینجا بچسبانید',
+  badLinkText: 'این لینک مسیر گوگل‌مپ نیست. لینکی شبیه google.com/maps/dir/… لازم است.',
   getRoutes: ({ mode, origin, dest, signal }) => G.getGoogleRoutes({ mode, origin, dest, signal }),
   routeKey: (mode, o, d) => G.googleRouteKey(mode, o, d),
   search: (term, center, signal) => G.googleSearch(term, center, signal),

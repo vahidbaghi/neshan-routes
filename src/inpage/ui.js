@@ -91,7 +91,7 @@ const PANEL_HTML = `
       <div class="add-row">
         <button class="btn primary" id="addTripBtn">+ مسیر تازه</button>
         <form class="link-form" id="linkForm">
-          <input type="text" id="linkInput" placeholder="یا لینک یک مسیر نشان را اینجا بچسبانید" dir="auto" autocomplete="off">
+          <input type="text" id="linkInput" placeholder=" dir="auto" autocomplete="off">
           <button class="btn ghost" type="submit">افزودن</button>
         </form>
       </div>
@@ -142,6 +142,7 @@ export function mountUI(nm, P) {
   host.id = 'neshan-routes-ext';
   const R = host.attachShadow({ mode: 'open' });
   R.innerHTML = `<style>${panelCss}</style>${PANEL_HTML}`;
+  R.getElementById('linkInput').placeholder = P.linkHint;
   document.body.appendChild(host);
   // Keep typing in our inputs away from neshan.org's own keyboard shortcuts.
   for (const ev of ['keydown', 'keyup', 'keypress']) {
@@ -567,12 +568,12 @@ export function mountUI(nm, P) {
     const link = $('.neshan-link', el);
     link.hidden = !(t.origin && t.dest);
     if (t.origin && t.dest) link.href = P.link(t.mode, t.origin, t.dest);
-    if (r.status === 'loading') { box.innerHTML = '<span class="spinner"></span> <span class="muted">در حال گرفتن مسیر از نشان…</span>'; return; }
+    if (r.status === 'loading') { box.innerHTML = '<span class="spinner"></span> <span class="muted">در حال گرفتن مسیر از ${P.siteName}…</span>'; return; }
     if (r.status === 'error') { box.innerHTML = `<span class="err">${esc(r.error)}</span> <button class="link-btn" data-f="retry">دوباره</button>`; return; }
     if (r.status !== 'ok') { box.innerHTML = ''; return; }
     const sel = r.alts[t.alt] || r.alts[0];
     const alts = r.alts.length > 1
-      ? `<div class="alts"><span class="muted">راه‌های نشان:</span>${r.alts.map((a, i) => `<button class="alt ${i === t.alt ? 'sel' : ''}" data-alt="${i}" title="راه ${fa(i + 1)}${a.transit ? `: ${esc(a.summary)}` : ''}">${durText(a)}</button>`).join('')}</div>`
+      ? `<div class="alts"><span class="muted">راه‌های ${P.siteName}:</span>${r.alts.map((a, i) => `<button class="alt ${i === t.alt ? 'sel' : ''}" data-alt="${i}" title="راه ${fa(i + 1)}${a.transit ? `: ${esc(a.summary)}` : ''}">${durText(a)}</button>`).join('')}</div>`
       : '';
     const dep = parseClock(t.depart);
     const tr = sel.transit;
@@ -1021,7 +1022,7 @@ export function mountUI(nm, P) {
       // route requests start at most one per routeGap() ms
       const left = Math.ceil(((total - done) * routeGap()) / 1000);
       $('.ptext', prog).textContent = wait > 0
-        ? `نشان سرعت را محدود کرده؛ آهسته‌تر ادامه می‌دهیم (${fa(wait)} ثانیه)…`
+        ? `${P.siteName} سرعت را محدود کرده؛ آهسته‌تر ادامه می‌دهیم (${fa(wait)} ثانیه)…`
         : `${PH[phase] || ''}${total && done < total ? ` حداکثر حدود ${fa(Math.max(1, left))} ثانیه` : ''}`;
     };
     const onProgress = (p) => { last = p; paint(); };
@@ -1152,7 +1153,7 @@ export function mountUI(nm, P) {
       </div></div>
       <div class="when">${when}</div>
       <div class="totals">وقت اضافهٔ همه روی هم <b>${fmtDur(opt.sum)}</b>، بیشترینِ یک نفر <b>${fmtDur(opt.max)}</b></div>
-      ${m.partial ? '<p class="note warn-note">نشان وسط کار درخواست‌ها را محدود کرد؛ این بهترین جایی است که تا آن لحظه پیدا شد. کمی بعد دوباره بزنید تا دقیق‌تر شود.</p>' : ''}
+      ${m.partial ? `<p class="note warn-note">${P.siteName} وسط کار درخواست‌ها را محدود کرد؛ این بهترین جایی است که تا آن لحظه پیدا شد. کمی بعد دوباره بزنید تا دقیق‌تر شود.</p>` : ''}
       <div class="people-list">${people}</div>
       <div class="res-actions">
         <button class="link-btn" data-act="zoom-meet">نمایش روی نقشه</button>
@@ -1236,7 +1237,7 @@ export function mountUI(nm, P) {
     const v = $('#linkInput').value.trim();
     if (!v) return;
     if (addTripsFromLink(v)) $('#linkInput').value = '';
-    else toast('این لینک مسیر نشان نیست. لینکی شبیه neshan.org/maps/routing/… لازم است.', { error: true });
+    else toast(P.badLinkText, { error: true });
   });
 
   // The route currently open in Neshan's own routing panel (from the page URL).

@@ -278,7 +278,7 @@ const blockedMsg = () => `${SERVICE} فعلاً درخواست‌های این �
 const rateLimitMsg = () => `${SERVICE} موقتاً جلوی درخواست‌های زیاد را گرفته است. چند دقیقه بعد دوباره امتحان کنید.`;
 const MAX_429_RETRIES = 3;
 
-async function getText(url, signal, lane = 'other') {
+async function getText(url, signal, lane = 'other', init = {}) {
   const L = lanes[lane];
   let lastErr;
   let failures = 0;
@@ -291,7 +291,7 @@ async function getText(url, signal, lane = 'other') {
         // A stalled connection must not hang a whole meeting search: time out and retry.
         const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
         const sig = signal ? AbortSignal.any([signal, timeout]) : timeout;
-        const r = await fetchImpl(url, { signal: sig, headers: { 'Content-Type': 'application/json' } });
+        const r = await fetchImpl(url, { headers: { 'Content-Type': 'application/json' }, ...init, signal: sig });
         return {
           ok: r.ok, status: r.status, text: r.ok ? await r.text() : '',
           retryAfter: Number(r.headers?.get?.('retry-after')) || 0,

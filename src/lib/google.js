@@ -63,7 +63,7 @@ export function parseGoogleDirections(text, mode) {
   const routes = at(j, 0, 1) || [];
   if (!routes.length) {
     const msg = mode === 'PUBLIC_TRANSPORTATION' || mode === 'BIKE'
-      ? 'گوگل برای این حالت در این منطقه مسیری ندارد'
+      ? `گوگل برای این مسیر حالت ${mode === 'BIKE' ? 'دوچرخه' : 'همگانی'} ندارد (در ایران گوگل مسیر همگانی و دوچرخه نمی‌دهد؛ خودرو یا پیاده را بزنید).`
       : 'گوگل مسیری پیدا نکرد';
     throw new NeshanError(msg, 'noroute');
   }
@@ -109,6 +109,9 @@ export function parseGoogleDirections(text, mode) {
 
 const round5 = (x) => Math.round(x * 1e5) / 1e5;
 const cache = new Map();
+// Without cookies: a signed-in session makes Google demand a per-page session token
+// (`!50s…`) that we cannot get, and answers 400. Signed-out requests work for everyone.
+const NO_COOKIES = { credentials: 'omit' };
 export function clearGoogleCache() { cache.clear(); }
 export const googleRouteKey = (mode, o, d) => ['g', mode, round5(o.lat), round5(o.lng), round5(d.lat), round5(d.lng)].join('|');
 
@@ -116,7 +119,7 @@ export function getGoogleRoutes({ mode, origin, dest, signal }) {
   const key = googleRouteKey(mode, origin, dest);
   if (cache.has(key)) return cache.get(key);
   const url = `/maps/preview/directions?authuser=0&hl=fa&pb=${directionsPb(mode, origin, dest)}`;
-  const p = (async () => parseGoogleDirections(await fetchText(url, signal, 'route'), mode))();
+  const p = (async () => parseGoogleDirections(await fetchText(url, signal, 'route', NO_COOKIES), mode))();
   cache.set(key, p);
   const drop = () => { if (cache.get(key) === p) cache.delete(key); };
   p.catch(drop);
@@ -148,7 +151,7 @@ export function parseGoogleSearch(text) {
 
 export async function googleSearch(term, center, signal) {
   const pb = `!4m9!1m3!1d30000!2d${center.lng.toFixed(5)}!3d${center.lat.toFixed(5)}!2m0!3m2!1i1400!2i900!4f13.1!7i20!10b1`;
-  const text = await fetchText(`/search?tbm=map&authuser=0&hl=fa&q=${encodeURIComponent(term)}&pb=${pb}`, signal, 'other');
+  const text = await fetchText(`/search?tbm=map&authuser=0&hl=fa&q=${encodeURIComponent(term)}&pb=${pb}`, signal, 'other', NO_COOKIES);
   return parseGoogleSearch(text);
 }
 

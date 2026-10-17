@@ -8,7 +8,7 @@ import {
 } from '../src/lib/neshan.js';
 import { haversine, offset, sharedLength } from '../src/lib/geo.js';
 import {
-  parseGoogleDirections, parseGoogleSearch, parseGoogleUrl, googleUrl, directionsPb, getGoogleRoutes, clearGoogleCache,
+  parseGoogleDirections, parseGoogleSearch, parseGoogleUrl, googleUrl, directionsPb, getGoogleRoutes, clearGoogleCache, googleSearch,
 } from '../src/lib/google.js';
 import { findMeetingPoint, evaluateMeetingPoint, scoreLegs } from '../src/lib/meet.js';
 
@@ -453,5 +453,21 @@ test('Google: requests go through the shared pacing and cache', async () => {
   await getGoogleRoutes(a);
   await getGoogleRoutes(a);
   assert.equal(n, 1);
+  setFetch((...x) => fetch(...x));
+});
+
+// A signed-in Google session answers our requests with 400 (it wants a per-page token),
+// so the extension must never send the user's Google cookies.
+test('Google: route and search requests go out without cookies', async () => {
+  const seen = [];
+  setFetch(async (u, init) => {
+    seen.push([u, init?.credentials]);
+    return { ok: true, status: 200, text: async () => fx(u.startsWith('/search') ? 'google_search.txt' : 'google_drive.txt') };
+  });
+  clearGoogleCache();
+  await getGoogleRoutes({ mode: 'CAR', origin: { lat: 35.7572, lng: 51.4099 }, dest: { lat: 35.7006, lng: 51.3913 } });
+  await googleSearch('میدان تجریش', { lat: 35.8, lng: 51.43 });
+  assert.equal(seen.length, 2);
+  for (const [u, c] of seen) assert.equal(c, 'omit', u);
   setFetch((...x) => fetch(...x));
 });

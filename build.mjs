@@ -25,6 +25,8 @@ const base = {
   content_scripts: [
     // storage bridge (isolated world) first, then the panel inside the page's own world
     { matches: SITES, js: ['bridge.js'], run_at: 'document_start' },
+    // before the site's scripts: keeps keys typed in the panel away from its shortcuts
+    { matches: SITES, js: ['keyguard.js'], run_at: 'document_start', world: 'MAIN' },
     { matches: SITES, js: ['inpage.js'], run_at: 'document_idle', world: 'MAIN' },
   ],
 };
@@ -101,6 +103,7 @@ for (const [target, manifest] of Object.entries(manifests)) {
     cpSync(join(src, 'icons'), join(out, 'icons'), { recursive: true });
     cpSync(join(src, 'background.js'), join(out, 'background.js'));
     cpSync(join(src, 'content', 'bridge.js'), join(out, 'bridge.js'));
+    cpSync(join(src, 'content', 'keyguard.js'), join(out, 'keyguard.js'));
     await bundle(entry, join(out, 'inpage.js'));
     writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
     console.log(`built ${relative(root, out)}`);
