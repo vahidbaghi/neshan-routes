@@ -270,9 +270,12 @@ export function setRequestTimeout(ms) { REQUEST_TIMEOUT_MS = ms; }
 let fetchImpl = (...a) => fetch(...a);
 export function setFetch(f) { fetchImpl = f; }
 
+// The same plumbing serves neshan.org and google.com/maps; messages name the site.
+let SERVICE = 'نشان';
+export function setServiceName(name) { SERVICE = name; }
 const BLOCKED_PAUSE_MS = 60 * 1000;
-const BLOCKED_MSG = 'نشان فعلاً درخواست‌های این اینترنت را رد می‌کند (۴۰۳). اگر خود نقشهٔ نشان هم بالا نمی‌آید، مشکل از دسترسی است نه افزونه؛ کمی بعد یا با اینترنت دیگری امتحان کنید.';
-const RATE_LIMIT_MSG = 'نشان موقتاً جلوی درخواست‌های زیاد را گرفته است. چند دقیقه بعد دوباره امتحان کنید.';
+const blockedMsg = () => `${SERVICE} فعلاً درخواست‌های این اینترنت را رد می‌کند (۴۰۳). اگر خود نقشهٔ ${SERVICE} هم بالا نمی‌آید، مشکل از دسترسی است نه افزونه؛ کمی بعد یا با اینترنت دیگری امتحان کنید.`;
+const rateLimitMsg = () => `${SERVICE} موقتاً جلوی درخواست‌های زیاد را گرفته است. چند دقیقه بعد دوباره امتحان کنید.`;
 const MAX_429_RETRIES = 3;
 
 async function getText(url, signal, lane = 'other') {
@@ -296,7 +299,7 @@ async function getText(url, signal, lane = 'other') {
       }, signal, lane);
     } catch (e) {
       if (signal?.aborted) throw new NeshanError('لغو شد', 'aborted');
-      lastErr = new NeshanError('اتصال به نشان برقرار نشد', 'network');
+      lastErr = new NeshanError(`اتصال به ${SERVICE} برقرار نشد`, 'network');
       if (++failures >= 3) throw lastErr;
       await sleep(600 * failures);
       continue;
@@ -309,7 +312,7 @@ async function getText(url, signal, lane = 'other') {
       // Slow this lane down for good and wait out the pause; give up after a few rounds.
       L.okRun = 0;
       L.gap = Math.min(lane === 'route' ? MAX_ROUTE_GAP_MS : 4000, Math.round(Math.max(L.gap * 1.5, 300)));
-      if (++limitedTimes > MAX_429_RETRIES) throw new NeshanError(RATE_LIMIT_MSG, 'ratelimit');
+      if (++limitedTimes > MAX_429_RETRIES) throw new NeshanError(rateLimitMsg(), 'ratelimit');
       const pause = Math.min(60, res.retryAfter || 10 * 2 ** (limitedTimes - 1)) * 1000;
       cooldownUntil = Math.max(cooldownUntil, Date.now() + pause);
       notifyPause();
@@ -319,17 +322,18 @@ async function getText(url, signal, lane = 'other') {
       // Neshan has blocked this connection: retrying only makes it worse, so stop
       // everything for a while and say so plainly.
       cooldownUntil = Math.max(cooldownUntil, Date.now() + BLOCKED_PAUSE_MS);
-      throw new NeshanError(BLOCKED_MSG, 'ratelimit');
+      throw new NeshanError(blockedMsg(), 'ratelimit');
     }
     if (res.status >= 500) {
-      lastErr = new NeshanError(`خطای سرور نشان (${res.status})`, 'api');
+      lastErr = new NeshanError(`خطای سرور ${SERVICE} (${res.status})`, 'api');
       if (++failures >= 3) throw lastErr;
       await sleep(600 * failures);
       continue;
     }
-    throw new NeshanError(`خطای نشان (${res.status})`, 'api');
+    throw new NeshanError(`خطای ${SERVICE} (${res.status})`, 'api');
   }
 }
+export const fetchText = getText;
 
 const round5 = (x) => Math.round(x * 1e5) / 1e5;
 const routeCache = new Map();

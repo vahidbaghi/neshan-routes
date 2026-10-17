@@ -1,9 +1,9 @@
-// Isolated-world helper on neshan.org: the in-page panel (MAIN world) cannot use
+// Isolated-world helper on neshan.org and google.com/maps: the in-page panel (MAIN world) cannot use
 // extension APIs, so it asks this script over window.postMessage to read/write
 // extension storage. Only our own keys are reachable.
 (() => {
   const api = globalThis.browser ?? globalThis.chrome;
-  const KEYS = new Set(['state', 'openPanel']);
+  const KEYS = new Set(['state', 'state.google', 'openPanel']);
 
   window.addEventListener('message', async (e) => {
     if (e.source !== window || e.data?.__nr !== 'req') return;

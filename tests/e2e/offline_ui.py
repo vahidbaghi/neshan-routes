@@ -18,7 +18,7 @@ CLIP = {'x': 56, 'y': 58, 'width': 390, 'height': 700}
 
 work = pathlib.Path(tempfile.mkdtemp(prefix='nr-offline-'))
 subprocess.run(['npx', 'esbuild', str(ROOT / 'tests/e2e/offline/entry.js'), '--bundle', '--format=iife',
-                '--loader:.css=text', f'--outfile={work / "bundle.js"}', '--log-level=warning'],
+                '--loader:.css=text', '--loader:.txt=text', f'--outfile={work / "bundle.js"}', '--log-level=warning'],
                check=True, cwd=ROOT, shell=sys.platform == 'win32')
 (work / 'index.html').write_text('<!doctype html><meta charset="utf-8"><body style="margin:0;background:#e9e7e2">'
                                  '<div id="map" style="position:fixed;inset:0"></div><script src="bundle.js"></script>', encoding='utf-8')
@@ -206,6 +206,45 @@ with sync_playwright() as p:
     check('back to the plain table', js("__routes.root.querySelectorAll('#compareBody table.cmp:not(.matrix) tbody tr').length") == 6)
     check('6+ routes: shared road shown as a list of pairs, not a wide table', js("__routes.root.querySelectorAll('table.matrix').length") == 0)
     check('routes untouched by grouping', js("JSON.stringify(__routes.state.trips.map(t => [t.name, t.origin, t.dest, t.mode]))") == before)
+
+    # ---- the same panel with the Google Maps provider (recorded Google responses)
+    pg.goto((work / 'index.html').as_uri() + '?site=google')
+    pg.wait_for_function("!!window.__routes && !__routes.root.getElementById('panel').hidden", timeout=15000)
+    pg.click('#addTripBtn')
+    check('Google: four modes (no motorcycle), no traffic-zone options',
+          js("[...__routes.root.querySelectorAll('.mode')].map(b => b.dataset.mode).join(',')") == 'CAR,PUBLIC_TRANSPORTATION,PEDESTRIAN,BIKE'
+          and js("__routes.root.querySelector('.avoid-opts').hidden"))
+    pg.fill('input[data-f=origin]', '35.7572, 51.4099'); pg.locator('input[data-f=origin] ~ .suggest button').first.wait_for(); pg.press('input[data-f=origin]', 'Enter')
+    pg.fill('input[data-f=dest]', 'میدان انقلاب')
+    pg.locator('input[data-f=dest] ~ .suggest button').first.wait_for(timeout=10000)
+    sugg = js("__routes.root.querySelector('input[data-f=dest] ~ .suggest button').innerText")
+    pg.press('input[data-f=dest]', 'Enter')
+    pg.wait_for_function("__routes.root.querySelector('.trip-result .big')")
+    check('Google: search finds the place', 'میدان انقلاب' in sugg, sugg.replace('\n', ' '))
+    req = js("__googleRequests.find(u => u.includes('/maps/preview/directions') && u.includes('!20m5!1e0'))") or ''
+    check('Google: directions request carries both points and the car mode',
+          '!3d35.757200!4d51.409900' in req and '!20m5!1e0' in req)
+    check('Google: route time and Google alternatives', js("__routes.root.querySelector('.trip-result .big').textContent") == '۳۵ دقیقه'
+          and js("__routes.root.querySelectorAll('.alt').length") == 3)
+    check('Google: picked point named from Google\'s answer', js("__routes.state.trips[0].origin.label") == 'KitchenMarket')
+    check('Google: links open Google Maps', js("__routes.root.querySelector('.neshan-link').href").startswith('https://www.google.com/maps/dir/')
+          and 'گوگل‌مپ' in js("__routes.root.querySelector('.neshan-link').textContent"))
+    pg.click('.mode[data-mode=PUBLIC_TRANSPORTATION]')
+    pg.wait_for_function("!!__routes.root.querySelector('ol.transit')")
+    res = js("__routes.root.querySelector('.trip-result').innerText")
+    check('Google: public transport with real times (no «حدود»), lines and fare', 'U8' in res and '€' in res and 'حدود' not in res
+          and 'تخمینی' not in res, res.replace('\n', ' ')[:140])
+    shot('9-google-transit')
+    pg.click('.mode[data-mode=CAR]')
+    js("""() => { __routes.root.getElementById('addTripBtn').click(); const t = __routes.state.trips[1];
+        __routes.setPoint(t.id, 'origin', {lat: 35.6997, lng: 51.3380}, 'آزادی'); __routes.setPoint(t.id, 'dest', {lat: 35.7730, lng: 51.4710}, 'پاسداران'); }""")
+    pg.wait_for_function("__routes.state.trips.length === 2 && __routes.state.trips.every(t => __routes.runtime(t.id).status === 'ok')")
+    pg.click('.tab[data-tab=meet]')
+    pg.click('#meetBtn')
+    pg.wait_for_function("__routes.root.querySelectorAll('#meetResult .person').length === 2", timeout=60000)
+    pg.wait_for_function("!!__routes.state.meeting.options[0].address", timeout=10000)
+    check('Google: meeting point named from Google’s route answer', not js(r"/^\d/.test(__routes.state.meeting.options[0].address)"),
+          js("__routes.state.meeting.options[0].address"))
 
     check('no page errors', not errors, '; '.join(errors[:3]))
     ctx.close()

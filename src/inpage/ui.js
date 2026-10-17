@@ -1,7 +1,7 @@
 // The panel shown on neshan.org/maps: several named routes on Neshan's own map,
 // comparison, and the meeting-point search. Runs in the page (MAIN world).
 import {
-  MODES, getRoutes, getBestRoute, search, reverse, neshanUrl, parseNeshanUrl, parseLatLng, routeKey, requestCount,
+  MODES, parseLatLng, requestCount,
   transitLineLabel,
   onPacing, routeGap, setRouteGap,
 } from '../lib/neshan.js';
@@ -10,7 +10,6 @@ import { sharedLength, haversine } from '../lib/geo.js';
 import { store, onToggle } from './store.js';
 import panelCss from './panel.css';
 
-const STORAGE_KEY = 'state';
 const COLORS = ['#e53935', '#1e88e5', '#43a047', '#8e24aa', '#fb8c00', '#00897b', '#d81b60', '#6d4c41'];
 // Routing-request budgets for the meeting search (n = number of people). Measured on
 // synthetic cities against brute force: 'normal' stays within ~30 s of the best point.
@@ -44,7 +43,7 @@ function fmtDur(sec) {
   return `${fa(h)} ساعت${r ? ` و ${fa(r)} دقیقه` : ''}`;
 }
 // Neshan gives no times for public transport; ours are estimates, said so with «حدود».
-const durText = (r) => (r?.transit ? `حدود ${fmtDur(r.duration)}` : fmtDur(r.duration));
+const durText = (r) => (r?.transit && r.transit.estimated !== false ? `حدود ${fmtDur(r.duration)}` : fmtDur(r.duration));
 const fmtToman = (n) => `${fa(Math.round(n).toLocaleString('en-US').replace(/,/g, '٬'))} تومان`;
 const fmtExtra = (sec) => (sec < 45 ? 'بدون وقت اضافه' : `+${fmtDur(Math.max(60, sec))}`);
 function fmtDist(m) {
@@ -79,7 +78,7 @@ const PANEL_HTML = `
       <button class="icon-btn" id="closeBtn" title="بستن پنل" aria-label="بستن پنل">✕</button>
     </header>
     <div class="from-neshan" id="fromNeshan" hidden>
-      <span>مسیری که الان در نشان باز است:</span>
+      <span></span>
       <button class="btn small primary" id="fromNeshanBtn">+ افزودن</button>
     </div>
     <nav class="tabs" role="tablist">
@@ -134,7 +133,10 @@ const PANEL_HTML = `
   </aside>
   <input type="file" id="importFile" accept="application/json,.json" hidden>`;
 
-export function mountUI(nm) {
+// nm: the map adapter (NeshanMap or GoogleMap); P: the site (providers.js)
+export function mountUI(nm, P) {
+  const STORAGE_KEY = P.storageKey;
+  const hasAvoid = (mode) => P.avoid && (mode === 'CAR' || mode === 'MOTOR');
   // ---------------------------------------------------------------- shell
   const host = document.createElement('div');
   host.id = 'neshan-routes-ext';
@@ -181,9 +183,13 @@ export function mountUI(nm) {
   }
 
   let saveTimer;
-  function save() {
+  const snapshot = () => ({ trips: state.trips, settings: state.settings, meeting: state.meeting });
+  // save(true) writes right away and resolves when stored (before a page reload)
+  function save(now = false) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => store.set(STORAGE_KEY, { trips: state.trips, settings: state.settings, meeting: state.meeting }), 250);
+    if (now) return store.set(STORAGE_KEY, snapshot());
+    saveTimer = setTimeout(() => store.set(STORAGE_KEY, snapshot()), 250);
+    return Promise.resolve();
   }
 
   // ---------------------------------------------------------------- drawing on Neshan's map
@@ -204,7 +210,7 @@ export function mountUI(nm) {
           r.alts.forEach((a, i) => { if (i !== t.alt) lines.push({ coords: a.coords, color: t.color, width: 4, dash: 'alt', opacity: f ? 0.25 : 0.6 }); });
         }
         const sel = r.alts[t.alt] || r.alts[0];
-        if (sel.transit) {
+        if (sel.transit?.segments?.some((g) => g.coords?.length)) {
           for (const g of sel.transit.segments) {
             lines.push({ coords: g.coords, color: t.color, width: g.type === 'walk' ? 4 : 6, dash: g.type === 'walk' ? 'dot' : undefined, opacity: f ? 0.3 : 1 });
           }
@@ -252,7 +258,7 @@ export function mountUI(nm) {
   }
 
   const fitPadding = () => ({ top: 90, bottom: 50, right: 110, left: state.settings.panelOpen ? 480 : 80 });
-  function fitAll() {
+  function fitAll(explicit = false) {
     const pts = [];
     for (const t of state.trips) {
       if (t.hidden) continue;
@@ -261,7 +267,7 @@ export function mountUI(nm) {
       const r = runtime(t.id);
       if (r.alts?.[t.alt]) pts.push(...r.alts[t.alt].coords);
     }
-    nm.fitPoints(pts, fitPadding());
+    nm.fitPoints(pts, fitPadding(), { explicit });
   }
 
   // ---------------------------------------------------------------- picking
@@ -306,7 +312,7 @@ export function mountUI(nm) {
     redraw();
     if (!label) {
       try {
-        const addr = await reverse(p);
+        const addr = await P.reverse(p);
         const cur = tripById(tripId)?.[which];
         if (addr && cur && cur.lat === p.lat && cur.lng === p.lng) {
           cur.label = addr;
@@ -326,7 +332,7 @@ export function mountUI(nm) {
       return;
     }
     // Reuse a recent result (also across reloads) instead of asking neshan.org again.
-    const key = routeKey(t.mode, t.origin, t.dest, t.avoid);
+    const key = P.routeKey(t.mode, t.origin, t.dest, t.avoid);
     if (t.cache?.key === key && Date.now() - t.cache.at < ROUTE_REUSE_MS && t.cache.alts?.length) {
       r.alts = t.cache.alts; r.status = 'ok'; r.error = '';
       if (!(t.alt < r.alts.length)) t.alt = 0;
@@ -336,7 +342,13 @@ export function mountUI(nm) {
     r.status = 'loading';
     updateResult(t);
     try {
-      const alts = await getRoutes({ mode: t.mode, origin: t.origin, dest: t.dest, avoid: t.avoid });
+      const alts = await P.getRoutes({ mode: t.mode, origin: t.origin, dest: t.dest, avoid: t.avoid });
+      // Google returns the names of both points with the route: use them for picked points
+      if (alts.labels) {
+        ['origin', 'dest'].forEach((w, i) => {
+          if (alts.labels[i] && t[w] && /^-?\d+\.\d+, -?\d+\.\d+$/.test(t[w].label)) { t[w].label = alts.labels[i]; updatePointInput(t, w); }
+        });
+      }
       if (seq !== r.seq) return;
       r.alts = alts; r.status = 'ok'; r.error = '';
       t.cache = { key, at: Date.now(), alts: alts.map(({ duration, distance, summary, coords, transit }) => ({ duration, distance, summary, coords, transit })) };
@@ -376,7 +388,7 @@ export function mountUI(nm) {
   }
 
   function addTripsFromLink(text) {
-    const parsed = parseNeshanUrl(text);
+    const parsed = P.parseLink(text);
     if (!parsed) return false;
     const t = addTrip({ mode: parsed.mode });
     setPoint(t.id, 'origin', parsed.origin);
@@ -385,7 +397,7 @@ export function mountUI(nm) {
   }
 
   // ---------------------------------------------------------------- trips: rendering
-  const modeButtons = (sel) => Object.entries(MODES).map(([k, m]) =>
+  const modeButtons = (sel) => P.modes.map((k) => [k, MODES[k]]).map(([k, m]) =>
     `<button type="button" class="mode ${k === sel ? 'sel' : ''}" data-mode="${k}" role="radio" aria-checked="${k === sel}" title="${m.label}">${m.icon}<span>${m.label}</span></button>`).join('');
 
   // 24-hour departure time: hour 00–23 and minute (5-minute steps) as two lists.
@@ -452,11 +464,11 @@ export function mountUI(nm) {
           <summary>ساعت حرکت و گزینه‌های بیشتر</summary>
           <div class="more-body">
             ${departHTML(t.depart)}
-            <div class="avoid-opts" ${t.mode === 'CAR' || t.mode === 'MOTOR' ? '' : 'hidden'}>${avoid}</div>
+            <div class="avoid-opts" ${hasAvoid(t.mode) ? '' : 'hidden'}>${avoid}</div>
           </div>
         </details>
         <div class="card-actions">
-          <a class="link-btn neshan-link" href="#" hidden>نمایش در خود نشان</a>
+          <a class="link-btn neshan-link" href="#" hidden>نمایش در خود ${P.siteName}</a>
           <button class="link-btn" data-f="dup">کپی این مسیر</button>
           <button class="link-btn danger" data-f="del">حذف</button>
         </div>
@@ -486,7 +498,7 @@ export function mountUI(nm) {
       b.classList.toggle('sel', on);
       b.setAttribute('aria-checked', String(on));
     }
-    $('.avoid-opts', el).hidden = !(t.mode === 'CAR' || t.mode === 'MOTOR');
+    $('.avoid-opts', el).hidden = !hasAvoid(t.mode);
     $('.row-mode', el).textContent = MODES[t.mode].icon;
     $('.row-mode', el).title = MODES[t.mode].label;
     const r = runtime(t.id);
@@ -554,7 +566,7 @@ export function mountUI(nm) {
     const r = runtime(t.id);
     const link = $('.neshan-link', el);
     link.hidden = !(t.origin && t.dest);
-    if (t.origin && t.dest) link.href = neshanUrl(t.mode, t.origin, t.dest);
+    if (t.origin && t.dest) link.href = P.link(t.mode, t.origin, t.dest);
     if (r.status === 'loading') { box.innerHTML = '<span class="spinner"></span> <span class="muted">در حال گرفتن مسیر از نشان…</span>'; return; }
     if (r.status === 'error') { box.innerHTML = `<span class="err">${esc(r.error)}</span> <button class="link-btn" data-f="retry">دوباره</button>`; return; }
     if (r.status !== 'ok') { box.innerHTML = ''; return; }
@@ -578,10 +590,11 @@ export function mountUI(nm) {
   function transitHTML(tr) {
     const steps = tr.segments.map((g) => g.type === 'walk'
       ? `<li class="walk"><span class="ic">🚶</span><span>${fmtDist(g.distance)} پیاده${g.to ? ` تا ${esc(g.to)}` : ''}</span></li>`
-      : `<li class="ride"><span class="ic">${g.type === 'metro' ? '🚇' : '🚌'}</span><span><b>${esc(transitLineLabel(g))}</b>${g.stops ? `، ${fa(g.stops)} ایستگاه` : ''}${g.to ? ` تا ${esc(g.to)}` : ''}</span></li>`).join('');
-    return `<div class="muted via">${tr.fare ? `کرایه ${fmtToman(tr.fare)}، ` : ''}${fmtDist(tr.walk)} پیاده‌روی</div>
+      : `<li class="ride"><span class="ic">${g.type === 'metro' ? '🚇' : g.type === 'transit' ? '🚆' : '🚌'}</span><span><b>${esc(g.type === 'transit' ? g.line : transitLineLabel(g))}</b>${g.stops ? `، ${fa(g.stops)} ایستگاه` : ''}${g.from ? ` از ${esc(g.from)}` : ''}${g.to ? ` تا ${esc(g.to)}` : ''}${g.type === 'transit' && g.duration ? `، ${fmtDur(g.duration)}` : ''}</span></li>`).join('');
+    const fare = tr.fareText || (tr.fare ? fmtToman(tr.fare) : '');
+    return `<div class="muted via">${fare ? `کرایه ${esc(fare)}، ` : ''}${fmtDist(tr.walk)} پیاده‌روی</div>
       <ol class="transit">${steps}</ol>
-      <p class="hint">زمان مسیرهای همگانی تخمینی است؛ خود نشان برای این حالت زمان نمی‌دهد.</p>`;
+      ${tr.estimated === false ? '' : '<p class="hint">زمان مسیرهای همگانی تخمینی است؛ خود نشان برای این حالت زمان نمی‌دهد.</p>'}`;
   }
 
   function highlightCard(id) {
@@ -679,7 +692,7 @@ export function mountUI(nm) {
       b.classList.toggle('sel', on);
       b.setAttribute('aria-checked', String(on));
     }
-    $('.avoid-opts', el).hidden = !(mode === 'CAR' || mode === 'MOTOR');
+    $('.avoid-opts', el).hidden = !hasAvoid(mode);
     if (trip.mode === mode) return;
     trip.mode = mode; trip.alt = 0;
     markMeetingStale(id); save(); routeTrip(trip);
@@ -707,7 +720,7 @@ export function mountUI(nm) {
       clearTimeout(timer);
       ac?.abort();
       const v = input.value.trim();
-      const link = parseNeshanUrl(v);
+      const link = P.parseLink(v);
       if (link) {
         setMode(el, id, link.mode);
         input.blur();
@@ -724,7 +737,7 @@ export function mountUI(nm) {
         box.hidden = false;
         box.innerHTML = '<div class="empty"><span class="spinner"></span> جستجو…</div>';
         try {
-          const res = await search(v, nm.getCenter(), ac.signal);
+          const res = await P.search(v, nm.getCenter(), ac.signal);
           if (input.value.trim() === v) show(res.slice(0, 8), 'چیزی پیدا نشد');
         } catch (e) {
           if (e.kind !== 'aborted') show([], 'جستجو انجام نشد');
@@ -941,7 +954,7 @@ export function mountUI(nm) {
     const budget = PRECISION[state.settings.precision](n);
     const secs = (budget * routeGap()) / 1000;
     el.hidden = false;
-    el.textContent = `حداکثر حدود ${fmtDur(secs)} طول می‌کشد.`
+    el.textContent = (secs < 60 ? 'کمتر از یک دقیقه طول می‌کشد.' : `حداکثر حدود ${fmtDur(secs)} طول می‌کشد.`)
       + (n > 4 ? ` با ${fa(n)} نفر، فقط کسانی را که واقعاً قرار می‌گذارند انتخاب کنید تا جواب بهتر و سریع‌تر شود.` : '');
   }
   $('#meetPeople').addEventListener('click', (e) => {
@@ -971,14 +984,19 @@ export function mountUI(nm) {
     };
   }
 
-  const router = (t, from, to, signal) => getBestRoute({ mode: t.mode, origin: from, dest: to, avoid: t.avoid, signal });
+  const router = async (t, from, to, signal) => {
+    const alts = await P.getRoutes({ mode: t.mode, origin: from, dest: to, avoid: t.avoid, signal });
+    const best = alts.reduce((a, b) => (b.duration < a.duration ? b : a));
+    // Google names the end point of each route: that names the meeting point for free
+    return alts.labels?.[1] ? { ...best, endLabel: alts.labels[1] } : best;
+  };
 
   // Keep only what is needed to redraw and explain a result (it is persisted).
   const slimEval = (e) => e && {
     p: e.p, value: e.value, meet: e.meet, sum: e.sum, max: e.max,
     per: e.per.map((x) => ({
       a: x.a, b: x.b, arrival: x.arrival, wait: x.wait, detour: x.detour, extra: x.extra,
-      legA: { duration: x.legA.duration, distance: x.legA.distance, coords: x.legA.coords },
+      legA: { duration: x.legA.duration, distance: x.legA.distance, coords: x.legA.coords, endLabel: x.legA.endLabel || '' },
       legB: { duration: x.legB.duration, distance: x.legB.distance, coords: x.legB.coords },
     })),
   };
@@ -1033,13 +1051,13 @@ export function mountUI(nm) {
     }
   }
 
-  function fitMeeting() {
+  function fitMeeting(explicit = false) {
     const m = state.meeting;
     const opt = shownOption();
     if (!opt) return;
     const pts = [[opt.p.lat, opt.p.lng]];
     m.participants.forEach((id) => { const t = tripById(id); if (t) pts.push([t.origin.lat, t.origin.lng], [t.dest.lat, t.dest.lng]); });
-    nm.fitPoints(pts, fitPadding());
+    nm.fitPoints(pts, fitPadding(), { explicit });
   }
 
   async function lookupAddress(idx) {
@@ -1047,7 +1065,7 @@ export function mountUI(nm) {
     const opt = idx === 'manual' ? m.manual : m.options[idx];
     if (!opt || opt.address) return;
     try {
-      opt.address = await reverse(opt.p);
+      opt.address = (await P.reverse(opt.p)) || opt.per.map((x) => x.legA?.endLabel).find(Boolean) || '';
       if (state.meeting === m) { renderMeetResult(); save(); }
     } catch { /* coordinates are shown instead */ }
   }
@@ -1117,8 +1135,8 @@ export function mountUI(nm) {
           <span>کل راه</span><b>${fmtDur(total)} <span class="muted">(بدون قرار ${fmtDur(before)})</span></b>
         </div>
         <div class="person-links">
-          <a href="${neshanUrl(t.mode, t.origin, opt.p)}" target="_blank" rel="noopener">مسیر تا قرار در نشان ↗</a>
-          <a href="${neshanUrl(t.mode, opt.p, t.dest)}" target="_blank" rel="noopener">از قرار تا مقصد ↗</a>
+          <a href="${P.link(t.mode, t.origin, opt.p)}" target="_blank" rel="noopener">مسیر تا قرار در ${P.siteName} ↗</a>
+          <a href="${P.link(t.mode, opt.p, t.dest)}" target="_blank" rel="noopener">از قرار تا مقصد ↗</a>
         </div>
       </details>`;
     }).join('');
@@ -1129,7 +1147,7 @@ export function mountUI(nm) {
       ${choices}
       <div class="meet-head"><span class="meet-pin">🤝</span><div>
         <div class="meet-sub">${title}</div>
-        <div class="meet-addr">${esc(opt.address || fmtCoord(opt.p))}</div>
+        <div class="meet-addr">${opt.address ? esc(opt.address) : `<span dir="ltr">${fmtCoord(opt.p)}</span>`}</div>
         ${vsBest}
       </div></div>
       <div class="when">${when}</div>
@@ -1147,7 +1165,7 @@ export function mountUI(nm) {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.opt !== undefined) showOption(b.dataset.opt === 'manual' ? 'manual' : +b.dataset.opt);
-    else if (b.dataset.act === 'zoom-meet') fitMeeting();
+    else if (b.dataset.act === 'zoom-meet') save(true).then(() => fitMeeting(true));
     else if (b.dataset.act === 'copy-meet') {
       const p = shownOption().p;
       navigator.clipboard?.writeText(fmtCoord(p)).then(() => toast('مختصات کپی شد'), () => toast(fmtCoord(p)));
@@ -1226,13 +1244,13 @@ export function mountUI(nm) {
   function syncFromNeshan() {
     if (location.pathname === lastPath) return;
     lastPath = location.pathname;
-    const cur = parseNeshanUrl(location.pathname);
+    const cur = P.currentRoute();
     $('#fromNeshan').hidden = !cur;
-    if (cur) $('#fromNeshan span').textContent = `مسیرِ ${MODES[cur.mode].label} که الان در نشان باز است:`;
+    if (cur) $('#fromNeshan span').textContent = `مسیرِ ${MODES[cur.mode].label} که الان در ${P.siteName} باز است:`;
   }
   setInterval(syncFromNeshan, 700);
   $('#fromNeshanBtn').addEventListener('click', () => {
-    if (addTripsFromLink(location.pathname)) toast('مسیر نشان اضافه شد');
+    if (addTripsFromLink(location.href)) toast(`مسیر ${P.siteName} اضافه شد`);
   });
 
   $('#moreBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; });
@@ -1240,7 +1258,7 @@ export function mountUI(nm) {
   $('#moreMenu').addEventListener('click', (e) => {
     const act = e.target.closest('button')?.dataset.act;
     $('#moreMenu').hidden = true;
-    if (act === 'fit') fitAll();
+    if (act === 'fit') save(true).then(() => fitAll(true));
     else if (act === 'export') exportFile();
     else if (act === 'import') $('#importFile').click();
     else if (act === 'clear' && confirm('همهٔ مسیرها پاک شوند؟')) {
@@ -1317,6 +1335,7 @@ export function mountUI(nm) {
 
   // Test hook (used by the automated browser tests).
   window.__routes = {
+    provider: P,
     state, runtime, setPoint, routeTrip, runMeeting, switchTab, addTripsFromLink, fitAll, nm, root: R,
     get requestCount() { return requestCount; },
   };

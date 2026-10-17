@@ -10,20 +10,22 @@ const src = join(root, 'src');
 const dist = join(root, 'dist');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
+// neshan.org's map and Google Maps (google.com; the panel picks the site itself)
+const SITES = ['https://neshan.org/maps*', 'https://www.google.com/maps*'];
 const icons = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 96: 'icons/icon-96.png', 128: 'icons/icon-128.png' };
 const base = {
   manifest_version: 3,
-  name: 'مسیرها و محل قرار (برای نقشهٔ نشان)',
+  name: 'مسیرها و محل قرار (برای نقشهٔ نشان و گوگل‌مپ)',
   short_name: 'مسیرها و قرار',
   version: pkg.version,
-  description: 'چند مسیر هم‌زمان روی نقشهٔ نشان، مقایسهٔ آن‌ها و پیدا کردن محل قراری سر راه همه. افزونهٔ غیررسمی؛ وابسته به نشان نیست.',
+  description: 'چند مسیر هم‌زمان روی نقشهٔ نشان و گوگل‌مپ، مقایسهٔ آن‌ها و پیدا کردن محل قراری سر راه همه. افزونهٔ غیررسمی؛ وابسته به نشان یا گوگل نیست.',
   icons,
   action: { default_title: 'مسیرها و محل قرار', default_icon: { 16: icons[16], 32: icons[32], 48: icons[48] } },
   permissions: ['storage'],
   content_scripts: [
     // storage bridge (isolated world) first, then the panel inside the page's own world
-    { matches: ['https://neshan.org/maps*'], js: ['bridge.js'], run_at: 'document_start' },
-    { matches: ['https://neshan.org/maps*'], js: ['inpage.js'], run_at: 'document_idle', world: 'MAIN' },
+    { matches: SITES, js: ['bridge.js'], run_at: 'document_start' },
+    { matches: SITES, js: ['inpage.js'], run_at: 'document_idle', world: 'MAIN' },
   ],
 };
 const manifests = {

@@ -312,3 +312,7 @@ details.person > summary .muted { font-size: 12px; }
 .transit .ic { width: 18px; flex: none; text-align: center; }
 .transit li.walk { color: var(--muted); }
 .transit li.ride b { font-weight: 700; }
+
+/* Google Maps in left-to-right languages has its own panel on the left: use the right side */
+:host(.side-right) .panel { left: auto; right: 72px; }
+:host(.side-right) .launcher { left: auto; right: 72px; }

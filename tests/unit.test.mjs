@@ -7,6 +7,9 @@ import {
   routeGap, setRouteGap,
 } from '../src/lib/neshan.js';
 import { haversine, offset, sharedLength } from '../src/lib/geo.js';
+import {
+  parseGoogleDirections, parseGoogleSearch, parseGoogleUrl, googleUrl, directionsPb, getGoogleRoutes, clearGoogleCache,
+} from '../src/lib/google.js';
 import { findMeetingPoint, evaluateMeetingPoint, scoreLegs } from '../src/lib/meet.js';
 
 const fx = (n) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
@@ -384,4 +387,71 @@ test('unreachable candidates are skipped, all-unreachable throws', async () => {
   // No route geometry and no reachable point: an error.
   const bare = trips.map((t) => ({ ...t, base: { ...t.base, coords: [] } }));
   await assert.rejects(findMeetingPoint({ trips: bare, router: none }));
+});
+
+// ---------- Google Maps (recorded responses of google.com/maps' own web app)
+
+test('Google: parse a car route (Tehran)', () => {
+  const alts = parseGoogleDirections(fx('google_drive.txt'), 'CAR');
+  assert.equal(alts.length, 3);
+  assert.deepEqual(alts.labels, ['KitchenMarket', 'انتشارات فلفل قرمز Felfel Ghermez Publications']);
+  const [r] = alts;
+  assert.equal(r.distance, 9485);
+  assert.ok(r.duration > 25 * 60 && r.duration < 60 * 60);
+  assert.match(r.summary, /کردستان/);
+  const ll = (c) => ({ lat: c[0], lng: c[1] });
+  assert.ok(haversine(ll(r.coords[0]), { lat: 35.7572, lng: 51.4099 }) < 150);
+  assert.ok(haversine(ll(r.coords.at(-1)), { lat: 35.7006, lng: 51.3913 }) < 150);
+  assert.equal(r.transit, undefined);
+});
+
+test('Google: parse public transport (real times, lines, stops, fare)', () => {
+  const [r] = parseGoogleDirections(fx('google_transit.txt'), 'PUBLIC_TRANSPORTATION');
+  assert.equal(r.summary, 'U8، بعد U7');
+  assert.equal(r.transit.estimated, false);
+  assert.match(r.transit.fareText, /€/);
+  const rides = r.transit.segments.filter((g) => g.type === 'transit');
+  assert.deepEqual(rides.map((g) => [g.line, g.from, g.to]), [['U8', 'Alexanderplatz', 'Hermannplatz'], ['U7', 'Hermannplatz', 'Eisenacher Str.']]);
+});
+
+test('Google: empty answer and blocked page', () => {
+  const empty = `)]}'${String.fromCharCode(10)}${JSON.stringify([[null, []]])}`;
+  assert.throws(() => parseGoogleDirections(empty, 'BIKE'), (e) => e.kind === 'noroute' && /حالت/.test(e.message));
+  assert.throws(() => parseGoogleDirections('<html>unusual traffic</html>', 'CAR'), (e) => e.kind === 'ratelimit');
+});
+
+test('Google: search results', () => {
+  const [p] = parseGoogleSearch(fx('google_search.txt'));
+  assert.equal(p.title, 'میدان انقلاب');
+  assert.ok(Math.abs(p.lat - 35.701) < 0.01 && Math.abs(p.lng - 51.3915) < 0.01);
+});
+
+test('Google: request template carries points, mode and a request id', () => {
+  const pb = directionsPb('PUBLIC_TRANSPORTATION', { lat: 35.7572, lng: 51.4099 }, { lat: 35.7006, lng: 51.3913 });
+  assert.match(pb, /^!1m4!3m2!3d35\.757200!4d51\.409900!6e2!1m4!3m2!3d35\.700600!4d51\.391300!6e2/);
+  assert.match(pb, /!20m5!1e3!/);
+  assert.match(pb, /!15m3!1s[A-Za-z0-9_-]{22}!7e81/);
+});
+
+test('Google: links both ways', () => {
+  const u = googleUrl('PEDESTRIAN', { lat: 35.7572, lng: 51.4099 }, { lat: 35.7006, lng: 51.3913 });
+  assert.equal(u, 'https://www.google.com/maps/dir/35.757200,51.409900/35.700600,51.391300/data=!4m2!4m1!3e2');
+  assert.deepEqual(parseGoogleUrl(u).origin, { lat: 35.7572, lng: 51.4099 });
+  assert.equal(parseGoogleUrl(u).mode, 'PEDESTRIAN');
+  // places by name: coordinates come from the data parameter
+  const named = 'https://www.google.com/maps/dir/Vanak+Square/Enghelab+Square/@35.7,51.4,13z/data=!4m14!4m13!1m5!1m1!1s0x1:0x2!2m2!1d51.4099!2d35.7572!1m5!1m1!1s0x3:0x4!2m2!1d51.3913!2d35.7006!3e0';
+  const n = parseGoogleUrl(named);
+  assert.deepEqual([n.origin, n.dest, n.mode], [{ lat: 35.7572, lng: 51.4099 }, { lat: 35.7006, lng: 51.3913 }, 'CAR']);
+  assert.equal(parseGoogleUrl('https://www.google.com/maps/@35.7,51.4,12z'), null);
+});
+
+test('Google: requests go through the shared pacing and cache', async () => {
+  let n = 0;
+  setFetch(async (u) => { n++; assert.match(u, /^\/maps\/preview\/directions\?authuser=0&hl=fa&pb=/); return { ok: true, status: 200, text: async () => fx('google_drive.txt') }; });
+  clearGoogleCache();
+  const a = { mode: 'CAR', origin: { lat: 35.7572, lng: 51.4099 }, dest: { lat: 35.7006, lng: 51.3913 } };
+  await getGoogleRoutes(a);
+  await getGoogleRoutes(a);
+  assert.equal(n, 1);
+  setFetch((...x) => fetch(...x));
 });
