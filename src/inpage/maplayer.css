@@ -1,0 +1,42 @@
+:host { all: initial; }
+.pins { position: absolute; inset: 0; }
+.pin-wrap {
+  position: absolute; left: 0; top: 0; pointer-events: auto; cursor: grab; touch-action: none;
+  font-family: Vazir, Vazirmatn, Tahoma, sans-serif; will-change: transform;
+}
+.pin-wrap.dragging { cursor: grabbing; }
+.pin-wrap.dragging > * { filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .35)); }
+
+/* origin: teardrop pointing at the spot; destination: square centred on it */
+.pin {
+  position: absolute; left: -15px; top: -38px; width: 30px; height: 30px; box-sizing: border-box;
+  border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: var(--c); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+  display: flex; align-items: center; justify-content: center;
+}
+.pin span { transform: rotate(45deg); color: #fff; font-weight: 700; font-size: 12px; line-height: 1; }
+.pin.dest { left: -12px; top: -12px; width: 24px; height: 24px; border-radius: 5px; transform: none; }
+.pin.dest span { transform: none; }
+
+.meet {
+  position: absolute; left: -19px; top: -19px; width: 38px; height: 38px; box-sizing: border-box;
+  border-radius: 50%; background: #111827; border: 3px solid #fde047;
+  box-shadow: 0 0 0 4px rgba(253, 224, 71, .35), 0 3px 10px rgba(0, 0, 0, .4);
+  display: flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1;
+}
+.meet.alt {
+  left: -14px; top: -14px; width: 28px; height: 28px; border-width: 2px; background: #374151;
+  color: #fde047; font-weight: 700; font-size: 13px; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer;
+}
+
+.toast {
+  position: absolute; top: 76px; left: 50%; transform: translateX(-50%); pointer-events: none;
+  background: #ffffff; color: #1c2330; border: 1px solid #e3e7ee; box-shadow: 0 8px 24px rgba(16, 24, 40, .16);
+  padding: 8px 14px; border-radius: 20px; font: 500 13px Vazir, Vazirmatn, Tahoma, sans-serif; direction: rtl;
+  max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast.error { border-color: #d32f2f; color: #d32f2f; }
+/* ---- dark mode ---- */
+.toast.dark { background: #1c212b; color: #e6e9ef; border-color: #2b3240; }
+.toast.dark.error { border-color: #ef6b6b; color: #ef6b6b; }
+[hidden] { display: none !important; }

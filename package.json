@@ -1,0 +1,13 @@
+{
+  "name": "neshan-routes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/unit.test.mjs",
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}
